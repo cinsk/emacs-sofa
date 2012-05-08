@@ -1,4 +1,4 @@
-;;; couchdb.el --- Cloudant API
+;;; sofa.el --- CouchDB console (like Futon)
 
 ;; Copyright (C) 2012  Seong-Kook Shin
 
@@ -25,43 +25,44 @@
 ;;; Code:
 
 
+(require 'sofa-api)
 (require 'curl)
 (require 'json)
 
-(defvar couchdb-user-name nil)
-(defvar couchdb-user-password nil)
-(defvar couchdb-server "localhost")
-(defvar couchdb-port 5984)
+(defvar sofa-user-name nil)
+(defvar sofa-user-password nil)
+(defvar sofa-server "localhost")
+(defvar sofa-port 5984)
 
 (defvar cloudant-user-name nil)
 (defvar cloudant-user-password nil)
 (defconst cloudant-endpoint-url ".cloudant.com/")
 
-(defvar couch-endpoint nil)
-(defalias 'couch-endpoint 'couchdb-url)
+(defvar sofa-endpoint nil)
+(defalias 'sofa-endpoint 'sofa-couchdb-url)
 
-(defvar couchdb-json-prettifier "python -mjson.tool")
-(defvar couchdb-json-error-buffer "*CouchDB JSON errors*")
-(defvar couchdb-json-edit-buffer "*CouchDB Editing JSON*")
+(defvar sofa-json-prettifier "python -mjson.tool")
+(defvar sofa-json-error-buffer "*Sofa JSON errors*")
+(defvar sofa-json-edit-buffer "*Sofa Editing JSON*")
 
-(defvar couchdb-document-buffer "*CouchDB Document*"
+(defvar sofa-document-buffer "*Sofa Document*"
   "buffer name for view/editing one or multiple documents.")
 
-(defvar couchdb-use-https nil
+(defvar sofa-use-https nil
   "If non-nil, use HTTPS instead of HTTP.")
 
-(defface couchdb-value-edited-face '((t :inverse-video t))
+(defface sofa-value-edited-face '((t :inverse-video t))
   "Face to mark the current editing value.")
 
-(defface couchdb-revision-face '((t :foreground "magenta"))
+(defface sofa-revision-face '((t :foreground "magenta"))
   "Face to mark the current editing value.")
 
-(defface couchdb-id-face '((t :foreground "cyan"))
+(defface sofa-id-face '((t :foreground "cyan"))
   "Face to mark the current editing value.")
 
-(defconst couchdb-json-error-regexp-for-compile
+(defconst sofa-json-error-regexp-for-compile
   "^\\(.*?line [0-9]+ column [0-9]+ (char [0-9]+)\\)$"
-  "Regular expression for an error output from `couchdb-json-prettifier'.")
+  "Regular expression for an error output from `sofa-json-prettifier'.")
 
 (defsubst assoc-value (key alist &optional default)
   "Return the first association for KEY in ALIST.  Otherwise DEFAULT."
@@ -70,7 +71,7 @@
         (cdr pair)
       default)))
 
-(defmacro couchdb/doarray (spec &rest body)
+(defmacro sofa/doarray (spec &rest body)
   "Loop over an array, like `dolist'.
 
 \(fn (VAR ARRAY [RESULT]) BODY...)"
@@ -98,9 +99,9 @@
           (t
            (nth 1 lst)))))
 
-(defun couchdb-view-endpoint (database &optional design view &rest params)
-  "Return the endpoint URL for the CouchDB."
-  (let ((url (couch-endpoint database)))
+(defun sofa-view-endpoint (database &optional design view &rest params)
+  "Return the endpoint URL for the database."
+  (let ((url (sofa-endpoint database)))
     (cond ((and (null design) (null view))
            (setq url (concat url "/_all_docs"
                              (parse-query-params params))))
@@ -115,42 +116,42 @@
            (error "invalid argument(s)")))))
 
       
-(defun couchdb-url (&optional database)
-  (let ((hex-nam (url-hexify-string couchdb-user-name))
-        (hex-pwd (url-hexify-string couchdb-user-password)))
+(defun sofa-couchdb-url (&optional database)
+  (let ((hex-nam (url-hexify-string sofa-user-name))
+        (hex-pwd (url-hexify-string sofa-user-password)))
     (format "%s://%s%s%s/%s"
-            (if couchdb-use-https "https" "http")
+            (if sofa-use-https "https" "http")
             (if (string-equal hex-nam "")
                 ""
               (format "%s:%s@" hex-nam hex-pwd))
-            couchdb-server
-            (if couchdb-port
-                (format ":%d" couchdb-port)
+            sofa-server
+            (if sofa-port
+                (format ":%d" sofa-port)
               "")
             (or database ""))))
 
-(defun cloudant-url (&optional database)
+(defun sofa-cloudant-url (&optional database)
   (let ((hex-nam (url-hexify-string cloudant-user-name))
         (hex-pwd (url-hexify-string cloudant-user-password)))
     (format "%s://%s:%s@%s%s%s"
-            (if couchdb-use-https "https" "http")
+            (if sofa-use-https "https" "http")
             hex-nam hex-pwd hex-nam
             cloudant-endpoint-url
             (or database ""))))
 
-(defun couchdb-databases (&optional https)
+(defun sofa-databases (&optional https)
   "Get the list of the all databases."
-  (let ((url (concat (couch-endpoint) "_all_dbs"))
+  (let ((url (concat (sofa-endpoint) "_all_dbs"))
         result)
     (setq result (curl/http-recv 'get url))
     (let ((json-key-type 'string))
       (append (json-read-from-string (cdr result)) nil))))
 
-(defun couchdb-create-database (database)
+(defun sofa-create-database (database)
   "Create database, DATABASE.
 
 On error, raise `error' with the reason, otherwise return t."
-  (let ((url (concat (couch-endpoint) (url-hexify-string database)))
+  (let ((url (concat (sofa-endpoint) (url-hexify-string database)))
         result)
     (curl/with-temp-buffer
       (setq result (curl/http-send-buffer 'put url nil nil)))
@@ -164,16 +165,16 @@ On error, raise `error' with the reason, otherwise return t."
           (error (cdr err)))
         (cdr ok)))))
 
-(defun couchdb-database-exist-p (database)
+(defun sofa-database-exist-p (database)
   "Test if DATABASE existed."
-  (let* ((url (concat (couch-endpoint) (url-hexify-string database)))
+  (let* ((url (concat (sofa-endpoint) (url-hexify-string database)))
          (headers (car (curl/http-recv 'HEAD url)))
          (status (string-to-int (assoc-value "Status" headers "404"))))
     (and (>= status 200) (< status 300))))
 
-(defun couchdb-get-database-info (database)
+(defun sofa-get-database-info (database)
   "Get the information about DATABASE."
-  (let* ((url (concat (couch-endpoint) (url-hexify-string database)))
+  (let* ((url (concat (sofa-endpoint) (url-hexify-string database)))
          (result (curl/http-recv 'GET url))
          (headers (car result))
          (status (string-to-int (assoc-value "Status" headers "404")))
@@ -182,20 +183,20 @@ On error, raise `error' with the reason, otherwise return t."
         (json-read-from-string body))))
 
   
-(defun couchdb--documents-keywords ()
+(defun sofa--documents-keywords ()
   (list (cons "^...#.*$" 'font-lock-comment-face)
         (list "^...[[:space:]]*\\(\\<[^[:space:]]*\\>\\)[[:space:]]+\\(.*\\)$" 
-              '(1 'couchdb-revision-face)
-              '(2 'couchdb-id-face))))
+              '(1 'sofa-revision-face)
+              '(2 'sofa-id-face))))
 
-(defun couchdb-view-quit ()
+(defun sofa-view-quit ()
   "Quit the current buffer"
   (interactive)
   ;; TODO: check if there is unsaved data
-  (couchdb--hide-window-kill-buffer))
+  (sofa--hide-window-kill-buffer))
 
 
-(defun couchdb--view-point-on-doc-p ()
+(defun sofa--view-point-on-doc-p ()
   "Return t if the current line shows a document."
   (let ((oldpos (point)))
     (save-match-data
@@ -205,7 +206,7 @@ On error, raise `error' with the reason, otherwise return t."
         (goto-char oldpos)
         result))))
 
-(defun couchdb--view-point-on-id ()
+(defun sofa--view-point-on-id ()
   (let ((oldpos (point)))
     (save-match-data
       (beginning-of-line)
@@ -214,23 +215,23 @@ On error, raise `error' with the reason, otherwise return t."
           (goto-char (match-beginning 2))
         (goto-char oldpos)))))
 
-(defun couchdb-view-forward-line (&optional n)
+(defun sofa-view-forward-line (&optional n)
   (interactive "p")
   (let ((remain (forward-line n)))
     (when (not (eq remain n))
-      (couchdb--view-point-on-id))))
+      (sofa--view-point-on-id))))
 
-(defun couchdb-view-previous-line (&optional n)
+(defun sofa-view-previous-line (&optional n)
   (interactive "p")
-  (couchdb-view-forward-line (- n)))
+  (sofa-view-forward-line (- n)))
 
-(defun couchdb--marked-keys ()
+(defun sofa--marked-keys ()
   ;; Note that the first three characters on the document line is used
-  ;; for marking, which may not contain the text property, 'couch-key
-  (couchdb--map-over-marks
-      (lambda () (get-text-property (+ 3 (point)) 'couch-key))))
+  ;; for marking, which may not contain the text property, 'sofa-key
+  (sofa--map-over-marks
+      (lambda () (get-text-property (+ 3 (point)) 'sofa-key))))
 
-(defmacro couchdb--map-over-marks (function)
+(defmacro sofa--map-over-marks (function)
   "Map a FUNCTION on every marked line.  Return a list of FUNCTION's result.
 
 The point will be set before evaluating FUNCTION at the beginning
@@ -251,10 +252,10 @@ document."
        (save-restriction
          (widen)
          (goto-char (point-min))
-         (while (and (not (eobp)) (not (couchdb--view-point-on-doc-p)))
+         (while (and (not (eobp)) (not (sofa--view-point-on-doc-p)))
            (forward-line 1))
 
-         (while (and (not (eobp)) (couchdb--view-point-on-doc-p))
+         (while (and (not (eobp)) (sofa--view-point-on-doc-p))
            (if (progn (beginning-of-line) (looking-at "\\*"))
                (progn
                  (save-excursion
@@ -269,7 +270,7 @@ document."
 
          (when (eq ,processed 0)
            (goto-char ,oldpos)
-           (when (couchdb--view-point-on-doc-p)
+           (when (sofa--view-point-on-doc-p)
              (beginning-of-line)
              (save-excursion
                (setq ,processed (1+ ,processed)
@@ -281,14 +282,14 @@ document."
     
         
 
-(defun couchdb-repeat-over-lines (arg function)
+(defun sofa-repeat-over-lines (arg function)
   "Works similar to `dired-repeat-over-lines'."
   (let ((pos (make-marker)))
     (beginning-of-line)
     (while (and (> arg 0) (not (eobp)))
       (setq arg (1- arg))
       (beginning-of-line)
-      (while (and (not (eobp)) (not (couchdb--view-point-on-doc-p))
+      (while (and (not (eobp)) (not (sofa--view-point-on-doc-p))
                   (forward-line 1)))
       (save-excursion
         (forward-line 1)
@@ -298,95 +299,95 @@ document."
     (while (and (< arg 0) (not bobp))
       (setq arg (1+ arg))
       (forward-line -1)
-      (while (and (not (bobp)) (not (couchdb--view-point-on-doc-p))
+      (while (and (not (bobp)) (not (sofa--view-point-on-doc-p))
                   (forward-line -1)))
       (beginning-of-line)
       (save-excursion (funcall function)))
     (move-marker pos nil)
-    (couchdb--view-point-on-id)))
+    (sofa--view-point-on-id)))
 
 
-(defun couchdb-view-mark (arg)
+(defun sofa-view-mark (arg)
   (interactive "P")
   ;; TODO: handle ARG
   (let ((inhibit-read-only t))
-    (couchdb-repeat-over-lines (prefix-numeric-value arg)
+    (sofa-repeat-over-lines (prefix-numeric-value arg)
                                (lambda () (delete-char 1) (insert ?\*)))))
-    ;; (when (couchdb--view-point-on-doc-p)
+    ;; (when (sofa--view-point-on-doc-p)
     ;;   (beginning-of-line)
     ;;   (delete-char 1)
     ;;   (insert-char ?\* 1)
-    ;;   (couchdb-view-forward-line))))
+    ;;   (sofa-view-forward-line))))
 
-(defun couchdb-view-unmark (arg)
+(defun sofa-view-unmark (arg)
   (interactive "P")
   ;; TODO: handle ARG
   (let ((inhibit-read-only t))
-    (couchdb-repeat-over-lines (prefix-numeric-value arg)
+    (sofa-repeat-over-lines (prefix-numeric-value arg)
                                (lambda () (delete-char 1) (insert " ")))))
 
-(defun couchdb-view-backward-page (&optional count)
+(defun sofa-view-backward-page (&optional count)
   (interactive "p")
-  (couchdb-view-forward-page (- count)))
+  (sofa-view-forward-page (- count)))
 
-(defun couchdb-view-revert-buffer ()
+(defun sofa-view-revert-buffer ()
   "Refresh the current page."
   (interactive)
-  (couchdb-view-forward-page 0))
+  (sofa-view-forward-page 0))
 
-(defun couchdb-view-forward-page (&optional count)
+(defun sofa-view-forward-page (&optional count)
   (interactive "p")
   (save-restriction
     (widen)
     (let ((oldpos (point)))
       (goto-char (point-min))
-      (while (and (not (eobp)) (not (couchdb--view-point-on-doc-p)))
+      (while (and (not (eobp)) (not (sofa--view-point-on-doc-p)))
         (forward-line 1))
       ;; TODO: what if there is unsaved contents? (e.g. marks)
       (let ((inhibit-read-only t)
             (docs-begin (point))
             (docs-end (point-max))
-            (skip couchdb-skip)
-            (limit couchdb-limit))
-        ;; TODO: bound check for `couchdb-skip'
+            (skip sofa-skip)
+            (limit sofa-limit))
+        ;; TODO: bound check for `sofa-skip'
         (setq skip (max (+ skip (* count limit)) 0))
         (goto-char (point-max))
-        (let ((nread (couchdb--view-fill-page skip limit)))
+        (let ((nread (sofa--view-fill-page skip limit)))
           (message "%d document(s) read" nread)
           (if (<= nread 0)
               (goto-char oldpos)
             (delete-region docs-begin docs-end)
-            (setq couchdb-skip skip
-                  couchdb-limit limit)
+            (setq sofa-skip skip
+                  sofa-limit limit)
             (goto-char docs-begin)))))))
 
 
-(defun couchdb-view-load-documents-other-window ()
+(defun sofa-view-load-documents-other-window ()
   (interactive)
   ;; TODO: if there's marked doc(s), load that in batch mode?
-  (let ((keys (couchdb--marked-keys))
+  (let ((keys (sofa--marked-keys))
         buffer)
     ;; TODO: Do I need to refresh the current view page?
     ;;       It is possible to have outdated page for now...
     (message "Loading documents...")
-    (setq buffer (couchdb--load-documents couchdb-database-name keys))
-    ;; If `couchdb--load-documents' failed, BUFFER will be nil.
+    (setq buffer (sofa--load-documents sofa-database-name keys))
+    ;; If `sofa--load-documents' failed, BUFFER will be nil.
     (and buffer
          (pop-to-buffer buffer))))
 
   
-(defun couchdb--load-document (database key)
+(defun sofa--load-document (database key)
   "Load the document where the id is KEY from DATABASE, return the buffer."
   ;; TODO: I need to decide the mechanism of loading individual
   ;;       document.  If I use only one buffer to load document(s), it
   ;;       will be easy to maintain the consistency against dealing
   ;;       with multiple buffers.
-  (let* ((bufname (concat "couchdb:" database "/" key))
+  (let* ((bufname (concat "sofa:" database "/" key))
          (buffer (get-buffer bufname)))
     (if buffer
       ;; TODO: what if there's already that buffer?
       (with-current-buffer buffer
-        (if (not couchdb-source-url)
+        (if (not sofa-source-url)
             ;; this buffer has nothing to do with CouchDB.
             (progn 
               (pop-to-buffer buffer)
@@ -397,84 +398,84 @@ document."
     (with-current-buffer buffer
       ;; TODO: Is it safe to change the major mode if the buffer
       ;;       already existed?  What if there's unsaved contents?
-      (couchdb-json-mode)
-      ;; TODO: error handling of `couchdb-get-document'.
-      (couchdb-get-document database key buffer)
-      (setq couchdb-database-name database
-            couchdb-document-name key))
+      (sofa-json-mode)
+      ;; TODO: error handling of `sofa-get-document'.
+      (sofa-get-document database key buffer)
+      (setq sofa-database-name database
+            sofa-document-name key))
     buffer))
 
-(defun couchdb--view-fill-page (skip limit)
+(defun sofa--view-fill-page (skip limit)
   "load LIMIT document(s) at the point with SKIP document(s) skipped.
 
-This function loads document(s) according to the `couchdb-limit'
-and `couchdb-skip'"
-  (let ((url (couchdb-view-endpoint couchdb-database-name
-                                    couchdb-design-name 
-                                    couchdb-view-name
+This function loads document(s) according to the `sofa-limit'
+and `sofa-skip'"
+  (let ((url (sofa-view-endpoint sofa-database-name
+                                    sofa-design-name 
+                                    sofa-view-name
                                     :limit limit :skip skip))
         (count 0)
         result docs)
     ;; TODO: do we need to check for (and (bolp) (eolp))?
     (message "Loading view... (skip %d) (limit %d)" skip limit)
 
-    (setq result (couchdb-get url)
+    (setq result (sofa-get url)
           docs (assoc-value "rows" result []))
 
     (let ((inhibit-read-only t))
-      (couchdb/doarray (doc docs)
+      (sofa/doarray (doc docs)
         (let ((key (assoc-value "key" doc "N/A"))
               (rev (assoc-value "rev" (assoc-value "value" doc nil)
                                 "N/A")))
           (let ((text (format "   %-40s %s" rev key)))
             (insert text)
             (put-text-property (line-beginning-position) (line-end-position)
-                               'couch-key key)
+                               'sofa-key key)
             (put-text-property (line-beginning-position) (line-end-position)
-                               'couch-rev rev)
+                               'sofa-rev rev)
             (newline))
           (setq count (1+ count)))))
     count))
       
     
-(defun couchdb-load-view (&optional database design view limit skip)
+(defun sofa-load-view (&optional database design view limit skip)
   "Launch view mode like Futon"
   (interactive)
   (unless database
-    (setq database (couchdb-read-database-name-from-minibuffer "Database: ")))
+    (setq database (sofa-read-database-name-from-minibuffer "Database: ")))
   (and (null limit)
        (setq limit 10))
   (and (null skip)
        (setq skip 0))
-  (let ((dbinfo (couchdb-get-database-info database))
+  (let ((dbinfo (sofa-get-database-info database))
         docs)
-    (let* ((url (couchdb-view-endpoint database design view 
+    (let* ((url (sofa-view-endpoint database design view 
                                        :limit limit :skip skip))
-           (result (couchdb-get url))
-           (bufname (concat "couchdb:" database))
+           (result (sofa-get url))
+           (bufname (concat "sofa:" database))
            (buffer (get-buffer bufname)))
       (setq docs (assoc-value "rows" result []))
       (if buffer
           (with-current-buffer buffer
-            ;; TODO: check if the buffer is couchdb-load-view mode and ...
+            ;; TODO: check if the buffer is sofa-load-view mode and ...
             (setq buffer-read-only nil)
             (erase-buffer))
-        (setq buffer (get-buffer-create (concat "couchdb:" database))))
+        (setq buffer (get-buffer-create (concat "sofa:" database))))
       (with-current-buffer buffer
-        (couchdb-view-mode)
+        (sofa-view-mode)
 
-        (setq couchdb-database-name database
-              couchdb-design-name design
-              couchdb-view-name view)
+        (setq sofa-database-name database
+              sofa-design-name design
+              sofa-view-name view)
 
         (let ((inhibit-read-only t))
           (dolist (ent dbinfo)
             (insert (format "   # %s: %S\n"
                             (symbol-name (car ent)) (cdr ent)))))
 
-        (couchdb--view-fill-page skip limit)
-        (setq couchdb-skip skip
-              couchdb-limit limit)
+        (sofa--view-fill-page skip limit)
+        (setq sofa-skip skip
+              sofa-limit limit)
         
         (switch-to-buffer (current-buffer)))
     ;; TODO: dired-like mode?
@@ -482,28 +483,28 @@ and `couchdb-skip'"
       
 
 
-(defun couchdb-load-database (&optional database limit)
-  "Load the database in CouchDB mode."
+(defun sofa-load-database (&optional database limit)
+  "Load the database in sofa mode."
   (interactive)
   (unless database
-    (setq database (couchdb-read-database-name-from-minibuffer "Database: ")))
+    (setq database (sofa-read-database-name-from-minibuffer "Database: ")))
   (if (null limit)
       (setq limit 10))
 
-  (let ((dbinfo (couchdb-get-database-info (url-hexify-string database)))
+  (let ((dbinfo (sofa-get-database-info (url-hexify-string database)))
         docs)
-    (let* ((url (concat (couch-endpoint) (url-hexify-string database)
+    (let* ((url (concat (sofa-endpoint) (url-hexify-string database)
                         "/_all_docs" (parse-query-params (list :limit limit))))
-           (result (couchdb-get url)))
+           (result (sofa-get url)))
       (setq docs (assoc-value "rows" result []))
       ;; TODO: need to check if the buffer already exist.
-      (with-current-buffer (get-buffer-create (concat "couchdb:" database))
-        (setq font-lock-defaults '(couchdb--documents-keywords t nil nil nil))
+      (with-current-buffer (get-buffer-create (concat "sofa:" database))
+        (setq font-lock-defaults '(sofa--documents-keywords t nil nil nil))
         (font-lock-mode 1)
         (dolist (ent dbinfo)
           (insert (format "   # %s: %S\n" (symbol-name (car ent)) (cdr ent))))
 
-        (couchdb/doarray (doc docs)
+        (sofa/doarray (doc docs)
           (let ((key (assoc-value "key" doc "N/A"))
                 (rev (assoc-value "rev" (assoc-value "value" doc nil) "N/A")))
             (insert (format "   %-40s %s\n" rev key))))
@@ -513,7 +514,7 @@ and `couchdb-skip'"
       
 
 
-(defun couchdb--prettify-buffer (&optional buffer)
+(defun sofa--prettify-buffer (&optional buffer)
   "Prettify JSON text in BUFFER.
 
 If BUFFER is nil, this function uses the current buffer.
@@ -525,13 +526,13 @@ function will revert to the original text."
     (copy-region-as-kill (point-min) (point-max))
     (unless (eq (shell-command-on-region 
                  (point-min) (point-max)
-                 couchdb-json-prettifier nil 'replace
+                 sofa-json-prettifier nil 'replace
                  shell-command-default-error-buffer t) 0)
       (erase-buffer)
       ;; TODO: need to refind below line for `undo' feature.
       (insert-for-yank (current-kill 0)))))
 
-(defun couchdb-get (url &optional buffer)
+(defun sofa-get (url &optional buffer)
   "HTTP GET request to URL.
 
 It returns a form (RESPONSE-HEADERS . BODY) where RESPONSE-HEADERS
@@ -543,12 +544,12 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
   (let ((result (curl/http-recv 'get url buffer)))
     ;; TODO: check http status first
     (if buffer
-        (when couchdb-json-prettifier
+        (when sofa-json-prettifier
           (with-current-buffer buffer
             (copy-region-as-kill (point-min) (point-max))
             (unless (eq (shell-command-on-region 
                          (point-min) (point-max)
-                         couchdb-json-prettifier nil 'replace
+                         sofa-json-prettifier nil 'replace
                          shell-command-default-error-buffer t) 0)
               (erase-buffer)
               ;; TODO: need to refind below line for `undo' feature.
@@ -600,16 +601,16 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
         (parse (car params) (cadr params) (cddr params) "")
       "")))
 
-(defun couchdb-get-design (database design &optional buffer)
-  (let ((url (couchdb-view-endpoint database design)))
+(defun sofa-get-design (database design &optional buffer)
+  (let ((url (sofa-view-endpoint database design)))
     (message "GET %s" url)
     (if buffer
         (with-current-buffer buffer
-          (setq couchdb-source-url url)))
-    (couchdb-get url buffer)))
+          (setq sofa-source-url url)))
+    (sofa-get url buffer)))
 
 
-(defun couchdb--hide-window-kill-buffer (&optional buffer frame)
+(defun sofa--hide-window-kill-buffer (&optional buffer frame)
   "Hide BUFFER from any window, and kill BUFFER."
   ;; see also `calendar-hide-window' for the reference.
   (let ((buf (or buffer (current-buffer))))
@@ -625,15 +626,15 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
     (kill-buffer buf)))
 
 
-(defun couchdb-edit-kill-buffer ()
+(defun sofa-edit-kill-buffer ()
   "kill the current editing buffer"
   (interactive)
   (let ((buffer (current-buffer)))
     (when (or (not (buffer-modified-p buffer))
               (yes-or-no-p
                "The buffer modified. Are you sure to cancel editing?"))
-      (let ((parent couchdb-parent-buffer)
-            (reg    couchdb-parent-region))
+      (let ((parent sofa-parent-buffer)
+            (reg    sofa-parent-region))
         (when (and parent (buffer-live-p parent) reg)
           (with-current-buffer parent
             ;; If the user explictly wants to kill the editing buffer,
@@ -643,14 +644,14 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
             ;; writable, etc.
             (setq buffer-read-only nil)
             (remove-overlays (car reg) (cdr reg)
-                             'type 'couchdb)))
-        (setq couchdb-parent-buffer nil
-              couchdb-parent-region nil)
+                             'type 'sofa)))
+        (setq sofa-parent-buffer nil
+              sofa-parent-region nil)
 
-        (couchdb--hide-window-kill-buffer buffer)))))
+        (sofa--hide-window-kill-buffer buffer)))))
 
 
-(defun couchdb-kill-buffer ()
+(defun sofa-kill-buffer ()
   "kill the current buffer"
   (interactive)
   ;; TODO: since by default, Emacs asks for killing if the buffer is
@@ -661,17 +662,17 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
             (yes-or-no-p "The buffer modified.  Are you sure to kill?"))
         (kill-buffer buffer))))
 
-(defun couchdb--bind-temp-file ()
+(defun sofa--bind-temp-file ()
   (if buffer-file-name
       (delete-file buffer-file-name))
-  (setq buffer-file-name (make-temp-file "couchdb-"))
+  (setq buffer-file-name (make-temp-file "sofa-"))
   (let ((old (buffer-modified-p (current-buffer))))
     (unwind-protect
         (progn (set-buffer-modified-p t)
                (save-buffer 0))
       (set-buffer-modified-p old))))
 
-(defmacro couchdb-save-buffer-modified (&rest body)
+(defmacro sofa-save-buffer-modified (&rest body)
   (declare (indent 0) (debug t))
   (let ((modified (make-symbol "BUFFER-MODIFIED")))
     `(let ((,modified (buffer-modified-p (current-buffer))))
@@ -680,29 +681,29 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
          (set-buffer-modified-p ,modified)))))
 
 (add-to-list 'compilation-error-regexp-alist-alist
-             '(couch-json
+             '(sofa-json
                "^\\(.*\\):: .*?: line \\([0-9]+\\) column \\([0-9]+\\) (char [0-9]+)$"
                1 2 3))
 
-(add-to-list 'compilation-error-regexp-alist 'couch-json)
+(add-to-list 'compilation-error-regexp-alist 'sofa-json)
 
-(defun couchdb-validate-buffer ()
+(defun sofa-validate-buffer ()
   (interactive)
-  (if (couchdb--validate-buffer)
+  (if (sofa--validate-buffer)
       (message "No error")))
 
-(defun couchdb--validate-buffer (&optional buffer)
-  "Validate JSON document in the current CouchDB.
+(defun sofa--validate-buffer (&optional buffer)
+  "Validate JSON document in the current buffer.
 
 If found an error, pop-up the error buffer for the inspection, and returns nil.
 If no error, returns t."
   (with-current-buffer (or buffer (current-buffer))
     (save-restriction
-      (couchdb-save-buffer-modified 
+      (sofa-save-buffer-modified 
         (widen)
         (save-buffer 0)
 
-        (let ((errbuf (get-buffer couchdb-json-error-buffer)))
+        (let ((errbuf (get-buffer sofa-json-error-buffer)))
           (when errbuf
             (with-current-buffer errbuf
               (erase-buffer))))
@@ -712,18 +713,18 @@ If no error, returns t."
             (let ((outbuf (current-buffer)))
               (set-buffer json-buffer)
               (shell-command-on-region (point-min) (point-max)
-                                       (concat couchdb-json-prettifier
+                                       (concat sofa-json-prettifier
                                                " >/dev/null ")
                                        outbuf nil
-                                       couchdb-json-error-buffer nil))))
+                                       sofa-json-error-buffer nil))))
 
         (let ((file-name buffer-file-name)
-              (errbuf (get-buffer couchdb-json-error-buffer)))
+              (errbuf (get-buffer sofa-json-error-buffer)))
           (if (or (null errbuf) (= (buffer-size errbuf) 0))
               t
             (with-current-buffer errbuf
               (goto-char (point-min))
-              (while (re-search-forward couchdb-json-error-regexp-for-compile
+              (while (re-search-forward sofa-json-error-regexp-for-compile
                                         nil t)
                 (replace-match (format "%s:: \\1"
                                        (file-name-nondirectory file-name))))
@@ -732,21 +733,21 @@ If no error, returns t."
               (pop-to-buffer errbuf))
             nil))))))
   
-(defun couchdb-commit-design ()
-  (let ((database couchdb-database-name)
-        (design couchdb-design-name))
+(defun sofa-commit-design ()
+  (let ((database sofa-database-name)
+        (design sofa-design-name))
         
-    (couchdb-put-design database design (current-buffer))
+    (sofa-put-design database design (current-buffer))
     (set-buffer-modified-p nil)
 
     ;; reload the design doc.
-    (couchdb-reload-design)))
+    (sofa-reload-design)))
   
 
-(defun couchdb--remove-succeeded-docs (buffer response)
+(defun sofa--remove-succeeded-docs (buffer response)
   "Remove the successfully processed documents in the current bulk operation.
 
-BUFFER is `couchdb-document-buffer', and RESPONSE is a string that contains
+BUFFER is `sofa-document-buffer', and RESPONSE is a string that contains
 the returned HTTP resonse body.
 
 The purpose of this function is to process remaining job after
@@ -756,7 +757,7 @@ commiting documents modification in bulk mode.
 2. (TODO) display the error messages for each remaining document."
   (let ((json-input (json-read-from-string response))
         processed reasons)
-    (couchdb/doarray (elem json-input)
+    (sofa/doarray (elem json-input)
       (if (assoc-value 'error elem)
           (setq reasons (cons (list (assoc-value 'id elem)
                                     (assoc-value 'error elem)
@@ -773,7 +774,7 @@ commiting documents modification in bulk mode.
                             (point-min) (point-max))))
                (json-docs (assoc-value 'docs json-body []))
                errored-docs)
-          (couchdb/doarray (elem json-docs)
+          (sofa/doarray (elem json-docs)
             (unless (member (assoc-value '_id elem) processed)
               ;; TODO: how to let the user knows about the error message?
               (setq errored-docs (cons elem errored-docs))))
@@ -787,7 +788,7 @@ commiting documents modification in bulk mode.
             (setcdr (assoc 'docs json-body) errored-docs)
             (erase-buffer)
             (insert (json-encode-alist json-body))
-            (couchdb--prettify-buffer)
+            (sofa--prettify-buffer)
             (set-buffer-modified-p nil)
 
             (let ((msg ""))
@@ -801,11 +802,11 @@ commiting documents modification in bulk mode.
               (message (substring msg 0 -1))) ; remove trailing newline
             nil))))))
 
-(defun couchdb--commit-bulk-documents ()
+(defun sofa--commit-bulk-documents ()
   ;; TODO: validation of buffer?
   (if (not (buffer-modified-p (current-buffer)))
       (message "Nothing to commit")
-    (let ((url (concat (couch-endpoint couchdb-database-name)
+    (let ((url (concat (sofa-endpoint sofa-database-name)
                        "/_bulk_docs"))
           (buffer (current-buffer))
           result)
@@ -816,8 +817,8 @@ commiting documents modification in bulk mode.
         (let* ((headers (car result))
                (body (cdr result))
                (status (string-to-int (assoc-value "Status" headers "0"))))
-          (setq couchdb-body body
-                couchdb-status status)
+          (setq sofa-body body
+                sofa-status status)
           ;; if on error, show the error and exit.  if on success,
           ;; update the parent buffer, and exit if on partial success,
           ;; update hte parent buffer, and remove the succeeded
@@ -825,9 +826,9 @@ commiting documents modification in bulk mode.
           (cond ((eq status 201)
                  ;; The doc is updated.
                  ;; TODO: STATUS will be still 201 if there's only conflict!!
-                 (when (couchdb--remove-succeeded-docs buffer body)
+                 (when (sofa--remove-succeeded-docs buffer body)
                    ;; everything is okay, so removing the edit buffer.
-                   (couchdb--hide-window-kill-buffer buffer)
+                   (sofa--hide-window-kill-buffer buffer)
                    ;; TODO: remove the marks!!
                    ))
                  
@@ -839,117 +840,117 @@ commiting documents modification in bulk mode.
 
                  ;; TODO: shorten 'reason or make it readable.
                  (let ((errinfo (json-read-from-string body)))
-                   (message "CouchDB: %s: %s"
+                   (message "sofa: %s: %s"
                             (assoc-value 'error errinfo "Unknown")
                             (assoc-value 'reason errinfo "Unknown")))
                  ))
         )))))
 
   
-(defun couchdb-commit-buffer ()
-  "Commit the change into the CouchDB"
+(defun sofa-commit-buffer ()
+  "Commit the change into the remote"
   (interactive)
   (if (not (buffer-modified-p (current-buffer)))
       (message "Nothing to commit")
-    (if couchdb-commit-function
-        (funcall couchdb-commit-function)
+    (if sofa-commit-function
+        (funcall sofa-commit-function)
       (message "Don't know how to commit"))))
 
-(defun couchdb--view-mode-map () 
-  "create new CouchDB view mode map"
+(defun sofa--view-mode-map () 
+  "create new sofa view mode map"
   (let ((map (make-sparse-keymap)))
-    (define-key map [?n] #'couchdb-view-forward-line)
-    (define-key map [?p] #'couchdb-view-previous-line)
-    (define-key map [?m] #'couchdb-view-mark)
-    (define-key map [?u] #'couchdb-view-unmark)
-    (define-key map [?q] #'couchdb-view-quit)
-    (define-key map [?o] #'couchdb-view-load-documents-other-window)
-    (define-key map [?g] #'couchdb-view-revert-buffer)
-    (define-key map [(control ?x) ?\]] #'couchdb-view-forward-page)
-    (define-key map [(control ?x) ?\[] #'couchdb-view-backward-page)
+    (define-key map [?n] #'sofa-view-forward-line)
+    (define-key map [?p] #'sofa-view-previous-line)
+    (define-key map [?m] #'sofa-view-mark)
+    (define-key map [?u] #'sofa-view-unmark)
+    (define-key map [?q] #'sofa-view-quit)
+    (define-key map [?o] #'sofa-view-load-documents-other-window)
+    (define-key map [?g] #'sofa-view-revert-buffer)
+    (define-key map [(control ?x) ?\]] #'sofa-view-forward-page)
+    (define-key map [(control ?x) ?\[] #'sofa-view-backward-page)
 
     map))
 
-(defvar couchdb-view-mode-map (couchdb--view-mode-map)
-  "Keymap for CouchDB view mode")
+(defvar sofa-view-mode-map (sofa--view-mode-map)
+  "Keymap for sofa view mode")
 
-(defun couchdb--edit-mode-map () 
-  "create new CouchDB editing mode map"
+(defun sofa--edit-mode-map () 
+  "create new sofa editing mode map"
   (let ((map (make-sparse-keymap)))
-    (define-key map [(control ?x) ?k] #'couchdb-edit-kill-buffer)
-    (define-key map [(control ?c) (control ?k)] #'couchdb-edit-kill-buffer)
-    (define-key map [(control ?c) (control ?c)] #'couchdb-edit-commit-buffer)
-    (define-key map [(control ?c) ?c] #'couchdb-validate-buffer)
+    (define-key map [(control ?x) ?k] #'sofa-edit-kill-buffer)
+    (define-key map [(control ?c) (control ?k)] #'sofa-edit-kill-buffer)
+    (define-key map [(control ?c) (control ?c)] #'sofa-edit-commit-buffer)
+    (define-key map [(control ?c) ?c] #'sofa-validate-buffer)
 
     map))
 
-(defvar couchdb-edit-mode-map (couchdb--edit-mode-map)
-  "Keymap for CouchDB mode")
+(defvar sofa-edit-mode-map (sofa--edit-mode-map)
+  "Keymap for sofa mode")
 
 
-(defun couchdb--json-mode-map () 
-  "create new CouchDB mode map"
+(defun sofa--json-mode-map () 
+  "create new sofa mode map"
   (let ((map (make-sparse-keymap)))
-    (define-key map [(control ?x) ?k] #'couchdb-kill-buffer)
-    (define-key map [(control ?c) (control ?k)] #'couchdb-kill-buffer)
-    (define-key map [(control ?c) (control ?c)] #'couchdb-commit-buffer)
-    (define-key map [(control ?c) (control ?e)] #'couchdb-design-edit-value)
-    (define-key map [(control ?c) ?c] #'couchdb-validate-buffer)
+    (define-key map [(control ?x) ?k] #'sofa-kill-buffer)
+    (define-key map [(control ?c) (control ?k)] #'sofa-kill-buffer)
+    (define-key map [(control ?c) (control ?c)] #'sofa-commit-buffer)
+    (define-key map [(control ?c) (control ?e)] #'sofa-design-edit-value)
+    (define-key map [(control ?c) ?c] #'sofa-validate-buffer)
 
     map))
 
-(defvar couchdb-json-mode-map (couchdb--json-mode-map)
-  "Keymap for CouchDB mode")
+(defvar sofa-json-mode-map (sofa--json-mode-map)
+  "Keymap for sofa mode")
 
-(defvar couchdb-read-only-map (let ((map (make-keymap)))
+(defvar sofa-read-only-map (let ((map (make-keymap)))
                                 (suppress-keymap map 'nodigits)
                                 map))
 
-(defun couchdb--prepare-local-variables ()
-  (make-variable-buffer-local 'couchdb-database-name)
-  (make-variable-buffer-local 'couchdb-source-url)
-  (make-variable-buffer-local 'couchdb-design-name)
-  (make-variable-buffer-local 'couchdb-document-name)
-  (make-variable-buffer-local 'couchdb-commit-function)
-  ;; if `couchdb-edit-buffer' is non-nil, it should be the buffer which is
+(defun sofa--prepare-local-variables ()
+  (make-variable-buffer-local 'sofa-database-name)
+  (make-variable-buffer-local 'sofa-source-url)
+  (make-variable-buffer-local 'sofa-design-name)
+  (make-variable-buffer-local 'sofa-document-name)
+  (make-variable-buffer-local 'sofa-commit-function)
+  ;; if `sofa-edit-buffer' is non-nil, it should be the buffer which is
   ;; partially editing the current buffer.
-  (make-variable-buffer-local 'couchdb-edit-buffer)
-  (make-variable-buffer-local 'couchdb-parent-buffer)
-  (make-variable-buffer-local 'couchdb-parent-region)
-  (make-variable-buffer-local 'couchdb-skip)
-  (make-variable-buffer-local 'couchdb-limit)
+  (make-variable-buffer-local 'sofa-edit-buffer)
+  (make-variable-buffer-local 'sofa-parent-buffer)
+  (make-variable-buffer-local 'sofa-parent-region)
+  (make-variable-buffer-local 'sofa-skip)
+  (make-variable-buffer-local 'sofa-limit)
   )
 
-(define-derived-mode couchdb-json-mode js-mode "CouchDB"
-  "Major mode for CouchDB JSON editing
+(define-derived-mode sofa-json-mode js-mode "sofa"
+  "Major mode for sofa JSON editing
 
-\\{couchdb-json-mode-map}"
-  (couchdb--prepare-local-variables))
+\\{sofa-json-mode-map}"
+  (sofa--prepare-local-variables))
 
-(define-derived-mode couchdb-view-mode fundamental-mode "CouchDB"
-  "Major mode for CouchDB view mode"
-  (couchdb--prepare-local-variables)
-  (setq font-lock-defaults '(couchdb--documents-keywords t nil nil nil))
+(define-derived-mode sofa-view-mode fundamental-mode "sofa"
+  "Major mode for sofa view mode"
+  (sofa--prepare-local-variables)
+  (setq font-lock-defaults '(sofa--documents-keywords t nil nil nil))
   (font-lock-mode 1)
   (setq buffer-read-only t)
-  (use-local-map couchdb-view-mode-map))
+  (use-local-map sofa-view-mode-map))
 
-(define-minor-mode couchdb-edit-mode
-  "Couchdb JSON Edit mode"
+(define-minor-mode sofa-edit-mode
+  "Sofa JSON Edit mode"
   nil
-  " CouchDB"
-  couchdb-edit-mode-map)
+  " sofa"
+  sofa-edit-mode-map)
 
-(defun couchdb-reload-design ()
+(defun sofa-reload-design ()
   (interactive)
-  ;;(unless couchdb-source-url (error "couchdb-source-url missing"))
+  ;;(unless sofa-source-url (error "sofa-source-url missing"))
   (if (buffer-modified-p (current-buffer))
       ;; TODO: do we need to commit?
       nil
     (let ((oldpos (point)))
       (setq buffer-read-only nil)           ; is this needed?
       (erase-buffer)
-      (couchdb-get-design couchdb-database-name couchdb-design-name
+      (sofa-get-design sofa-database-name sofa-design-name
                           (current-buffer))
       ;; TODO: I don't know how to restore the point after reloading
       ;;       the doc.  The better way will be, save the current key
@@ -957,42 +958,42 @@ commiting documents modification in bulk mode.
       ;;       position.
       (goto-char oldpos))))
 
-(defun couchdb-load-design (&optional database design)
+(defun sofa-load-design (&optional database design)
   (interactive)
   (unless database
-    (setq database (couchdb-read-database-name-from-minibuffer "Database:")))
+    (setq database (sofa-read-database-name-from-minibuffer "Database:")))
   (unless design
-    (setq design (couchdb-read-design-name-from-minibuffer database
+    (setq design (sofa-read-design-name-from-minibuffer database
                                                            "Design Doc:")))
-  (let ((bufname (concat "couchdb:" database "/_design/" design))
+  (let ((bufname (concat "sofa:" database "/_design/" design))
         buffer)
     (if (setq buffer (get-buffer bufname))
         (progn (pop-to-buffer buffer)
                (message "You already loaded the design document."))
       (with-current-buffer (setq buffer (get-buffer-create bufname))
-        (couchdb-json-mode)
+        (sofa-json-mode)
         ;;(message "buffer name: %S" (buffer-name))
-        ;;(setq buffer-file-name-name (make-temp-file "couchdb-"))
-        (set-visited-file-name (make-temp-file "couchdb-"))
+        ;;(setq buffer-file-name-name (make-temp-file "sofa-"))
+        (set-visited-file-name (make-temp-file "sofa-"))
         (rename-buffer bufname)
-        (couchdb-get-design database design buffer)
+        (sofa-get-design database design buffer)
         ;;(message "buffer name: %S" (buffer-name))
         (save-buffer 0)
         ;;(message "buffer name: %S" (buffer-name))
         
-        (setq couchdb-database-name database
-              couchdb-design-name design
-              couchdb-commit-function 'couchdb-commit-design))
+        (setq sofa-database-name database
+              sofa-design-name design
+              sofa-commit-function 'sofa-commit-design))
       (switch-to-buffer buffer))))
 
-(defsubst couchdb-safe-document-buffer ()
+(defsubst sofa-safe-document-buffer ()
   "Return a document buffer."
-  (let ((buffer (get-buffer couchdb-document-buffer)))
+  (let ((buffer (get-buffer sofa-document-buffer)))
     (if (not buffer)
-        (get-buffer-create couchdb-document-buffer)
+        (get-buffer-create sofa-document-buffer)
       buffer)))
 
-(defun couchdb--load-documents (database keys)
+(defun sofa--load-documents (database keys)
   "Load the documents with KEYS into the buffer, and return it."
 
   ;; TODO: if KEYS contains just one key, set-up for editing,
@@ -1003,8 +1004,8 @@ commiting documents modification in bulk mode.
   ;; TODO: the received document should be transformed to the form for
   ;;       modification.
   (let ((body (json-encode-alist (list (cons "keys" (vconcat keys)))))
-        (url (couchdb-view-endpoint database nil nil :include-docs t))
-        (buffer (couchdb-safe-document-buffer))
+        (url (sofa-view-endpoint database nil nil :include-docs t))
+        (buffer (sofa-safe-document-buffer))
         status
         result)
 
@@ -1022,7 +1023,7 @@ commiting documents modification in bulk mode.
                                           "application/json")))
     (setq status (assoc-value "Status" (car result) "404"))
     (if (not (string-equal status "200"))
-        (progn (message "CouchDB returns HTTP %s code" status)
+        (progn (message "Remote returns HTTP %s code" status)
                nil)
 
 
@@ -1036,13 +1037,13 @@ commiting documents modification in bulk mode.
             ;; The purpose of this `let*' is to convert the JSON
             ;; output from CouchDB Bulk fetching API to the JSON data
             ;; for bulk doc modification.
-            (couchdb/doarray (elem rows)
+            (sofa/doarray (elem rows)
               (let ((doc (assoc-value 'doc elem nil)))
                 (setq res (cons doc res))))
             (insert (json-encode-alist (list (cons 'docs 
                                                    (vconcat (nreverse res)))))))
           
-          (couchdb--prettify-buffer buffer)
+          (sofa--prettify-buffer buffer)
 
           (with-current-buffer buffer
             ;; I need to think carefully here.  Should I make some
@@ -1056,7 +1057,7 @@ commiting documents modification in bulk mode.
             ;; }
 
             (when nil
-              ;; this causes `couchdb--language' failed.
+              ;; this causes `sofa--language' failed.
               (save-excursion
                 (goto-char (point-min))
                 (if (not (eq (car (json-forward-syntax)) 4))
@@ -1072,27 +1073,27 @@ commiting documents modification in bulk mode.
                     ;; `json-forward-syntax' should return (4 . "[")
                     (error "something is wrong"))
                 (put-text-property (point-min) (point)
-                                   'keymap couchdb-read-only-map)
+                                   'keymap sofa-read-only-map)
                 (put-text-property (point-min) (point)
                                    'intangible t)
                 )))
 
           (set-buffer-modified-p nil)
-          (set-visited-file-name (make-temp-file "couchdb-"))
+          (set-visited-file-name (make-temp-file "sofa-"))
           ;; `set-visited-file-name' changes the buffer name so revert it.
-          (rename-buffer couchdb-document-buffer)
+          (rename-buffer sofa-document-buffer)
           (save-buffer 0)
-          (couchdb-json-mode)
+          (sofa-json-mode)
           ;; TODO: set related local variables!!!
 
-          ;; (setq couchdb-database-name database ...)
-          (setq couchdb-database-name database
-                couchdb-source-url url
-                couchdb-commit-function #'couchdb--commit-bulk-documents)))
+          ;; (setq sofa-database-name database ...)
+          (setq sofa-database-name database
+                sofa-source-url url
+                sofa-commit-function #'sofa--commit-bulk-documents)))
       buffer)))
 
 
-(defun couchdb--load-documents/old (database keys)
+(defun sofa--load-documents/old (database keys)
   "Load the documents with KEYS into the buffer, and return it."
 
   ;; TODO: if KEYS contains just one key, set-up for editing,
@@ -1103,8 +1104,8 @@ commiting documents modification in bulk mode.
   ;; TODO: the received document should be transformed to the form for
   ;;       modification.
   (let ((body (json-encode-alist (list (cons "keys" (vconcat keys)))))
-        (url (couchdb-view-endpoint database nil nil :include-docs t))
-        (buffer (couchdb-safe-document-buffer))
+        (url (sofa-view-endpoint database nil nil :include-docs t))
+        (buffer (sofa-safe-document-buffer))
         status
         result)
 
@@ -1119,22 +1120,22 @@ commiting documents modification in bulk mode.
                                           "application/json")))
     (setq status (assoc-value "Status" (car result) "404"))
     (if (not (string-equal status "200"))
-        (progn (message "CouchDB returns HTTP %s code" status)
+        (progn (message "Remote returns HTTP %s code" status)
                nil)
       (with-current-buffer buffer
         (let ((inhibit-read-only t))
           (erase-buffer)
           (insert (cdr result))
-          (couchdb--prettify-buffer buffer)
+          (sofa--prettify-buffer buffer)
           (set-buffer-modified-p nil)
-          (set-visited-file-name (make-temp-file "couchdb-"))
+          (set-visited-file-name (make-temp-file "sofa-"))
           ;; `set-visited-file-name' changes the buffer name so revert it.
-          (rename-buffer couchdb-document-buffer)
+          (rename-buffer sofa-document-buffer)
           (save-buffer 0)
-          (couchdb-json-mode)
+          (sofa-json-mode)
           ;; TODO: set related local variables!!!
 
-          ;; (setq couchdb-database-name database ...)
+          ;; (setq sofa-database-name database ...)
                 
           ))
       
@@ -1347,7 +1348,7 @@ If there is no key component in backward, this function returns nil."
     key))
                    
 
-(defun couchdb-current-value-string-p ()
+(defun sofa-current-value-string-p ()
   "Return non-nil if the current value is a string type.
 
 If the current value is the string type, the return value is a
@@ -1378,8 +1379,8 @@ position."
     (goto-char oldpos)
     result))
 
-(defun couchdb-string-value-region ()
-  (let ((reg (couchdb-current-value-string-p))
+(defun sofa-string-value-region ()
+  (let ((reg (sofa-current-value-string-p))
         begin end)
     (when reg
       (setq begin (copy-marker (car reg) nil)
@@ -1410,12 +1411,12 @@ Note that the returned value does not contain the enclosing double-quote."
       (replace-match "\\\\n" t nil))
     (buffer-substring-no-properties (point-min) (point-max))))
 
-(defun couchdb-edit-commit-buffer ()
+(defun sofa-edit-commit-buffer ()
   (interactive)
 
   ;; TODO: make sure that the parent buffer is not buffer-modified-p if the
   ;;       commit did not change anything.
-  (let ((parent (buffer-local-value 'couchdb-parent-buffer (current-buffer)))
+  (let ((parent (buffer-local-value 'sofa-parent-buffer (current-buffer)))
         (buffer (current-buffer)))
     (unless (and parent (buffer-live-p parent))
       (error "No live parent buffer existed."))
@@ -1424,7 +1425,7 @@ Note that the returned value does not contain the enclosing double-quote."
         (progn
           (message "nothing changed.")
           ;; TODO: do we need to kill the editing buffer?
-          (couchdb-edit-kill-buffer)
+          (sofa-edit-kill-buffer)
           )
       (widen)
       ;;(while (search-forward "\n" nil t)
@@ -1432,21 +1433,21 @@ Note that the returned value does not contain the enclosing double-quote."
       
       (let ;; ((body (buffer-string)))
           ((body (json-read-string-from-buffer))
-           (begin (car couchdb-parent-region))
-           (end (cdr couchdb-parent-region)))
+           (begin (car sofa-parent-region))
+           (end (cdr sofa-parent-region)))
 
         (with-current-buffer parent
           (setq buffer-read-only nil)
           (remove-overlays begin end
-                           'type 'couchdb)
+                           'type 'sofa)
           (delete-region begin end)
           (insert body)
-          (setq couchdb-edit-buffer nil))
+          (setq sofa-edit-buffer nil))
 
-        (couchdb--hide-window-kill-buffer buffer)))))
+        (sofa--hide-window-kill-buffer buffer)))))
 
 
-(defun couchdb--language (doc)
+(defun sofa--language (doc)
   "Get the language of the JSON document.
 
 If DOC is a buffer, it parses it and get the value of \"language\" key,
@@ -1463,14 +1464,14 @@ otherwise DOC should be JSON alist."
                     (t (error "invalid argument type")))))
     (assoc-value 'language json "javascript")))
       
-(defun couchdb--set-major-mode (keys src-buffer dst-buffer)
+(defun sofa--set-major-mode (keys src-buffer dst-buffer)
   "Set the major mode of DST-BUFFER according to KEYS from SRC-BUFFER"
   ;; TODO: it is not a good idea to parse the whole buffer in this time.
   ;;       it's better to parse it after loading the design doc.
 
-  (if (buffer-local-value 'couchdb-design-name src-buffer)
+  (if (buffer-local-value 'sofa-design-name src-buffer)
       ;; If SRC-BUFFER reflects a design document, use "language" property
-      (let ((lang (couchdb--language src-buffer)))
+      (let ((lang (sofa--language src-buffer)))
         (cond ((or (and (eq (length keys) 3)
                         (string-equal (nth 0 keys) "views"))
                    (and (eq (length keys) 2)
@@ -1484,62 +1485,62 @@ otherwise DOC should be JSON alist."
     (with-current-buffer dst-buffer
       (text-mode))))
 
-(defun couchdb--clear-editing-status (&optional force)
+(defun sofa--clear-editing-status (&optional force)
   "Clear the editing status on the current buffer."
-  (if (and couchdb-edit-buffer 
-           (buffer-live-p couchdb-edit-buffer)
+  (if (and sofa-edit-buffer 
+           (buffer-live-p sofa-edit-buffer)
            force)
-      (kill-buffer couchdb-edit-buffer))
-  (setq couchdb-edit-buffer nil)
+      (kill-buffer sofa-edit-buffer))
+  (setq sofa-edit-buffer nil)
   (save-restriction
     (widen)
-    (remove-overlays (point-min) (point-max) 'type 'couchdb))
+    (remove-overlays (point-min) (point-max) 'type 'sofa))
   (setq buffer-read-only nil))
 
       
-(defun couchdb-design-edit-value ()
+(defun sofa-design-edit-value ()
   "Edit current JSON value in other buffer."
   (interactive)
 
-  (if (and couchdb-edit-buffer
-           (buffer-live-p couchdb-edit-buffer)
-           (buffer-modified-p couchdb-edit-buffer))
-      (progn (pop-to-buffer couchdb-edit-buffer)
+  (if (and sofa-edit-buffer
+           (buffer-live-p sofa-edit-buffer)
+           (buffer-modified-p sofa-edit-buffer))
+      (progn (pop-to-buffer sofa-edit-buffer)
              (message "You need to commit or to cancel the on-going editing"))
-    (couchdb--clear-editing-status)
-    (couchdb--prepare-editing-value)))
+    (sofa--clear-editing-status)
+    (sofa--prepare-editing-value)))
     
 
-(defun couchdb--prepare-editing-value ()
-  (let ((reg (couchdb-string-value-region))
+(defun sofa--prepare-editing-value ()
+  (let ((reg (sofa-string-value-region))
         (keys (json-key-list))
         overlay)
     (when reg
-      ;; (remove-overlays (point-min) (point-max) 'type 'couchdb)
+      ;; (remove-overlays (point-min) (point-max) 'type 'sofa)
       (message "set invert face around (%d %d)" 
                (marker-position (car reg))
                (marker-position (cdr reg)))
       (setq overlay (make-overlay (car reg) (cdr reg)))
-      (overlay-put overlay 'face 'couchdb-value-edited-face)
-      (overlay-put overlay 'type 'couchdb)
+      (overlay-put overlay 'face 'sofa-value-edited-face)
+      (overlay-put overlay 'type 'sofa)
 
       (setq buffer-read-only t)
 
       
-      (let ((buffer (get-buffer-create couchdb-json-edit-buffer))
+      (let ((buffer (get-buffer-create sofa-json-edit-buffer))
             (oldbuf (current-buffer))
             (body (concat "\""
                           (buffer-substring-no-properties (car reg) (cdr reg))
                           "\"")))
-        (setq couchdb-edit-buffer buffer)
+        (setq sofa-edit-buffer buffer)
         (with-current-buffer buffer
-          (couchdb--set-major-mode keys oldbuf buffer)
+          (sofa--set-major-mode keys oldbuf buffer)
 
-          (setq couchdb-parent-buffer oldbuf)
-          (setq couchdb-parent-region reg)
+          (setq sofa-parent-buffer oldbuf)
+          (setq sofa-parent-region reg)
           (widen)
           (erase-buffer)
-          (couchdb-edit-mode)
+          (sofa-edit-mode)
           (insert (read body))
           (goto-char (point-min))
           (set-buffer-modified-p nil)
@@ -1547,24 +1548,24 @@ otherwise DOC should be JSON alist."
           )
         (pop-to-buffer buffer)))))
 
-(defun couchdb-get-all-designs (database)
+(defun sofa-get-all-designs (database)
   "Return a list of design document names in DATABASE."
-  (let ((url (couchdb-view-endpoint "hello" nil nil 
+  (let ((url (sofa-view-endpoint "hello" nil nil 
                                     :start-key "\"_design/\""
                                     :end-key "\"_design0\"")))
     (let* ((result nil)
-           (json (couchdb-get url))
+           (json (sofa-get url))
            (err (assoc-value "error" json nil))
            (dvec (assoc-value "rows" json nil)))
       (if err
           (error err))
-      (couchdb/doarray (elem dvec)
+      (sofa/doarray (elem dvec)
         (let ((docname (assoc-value "id" elem nil)))
           (if docname
               (push (substring docname (length "_design/")) result))))
       result)))
 
-(defun couchdb-js-parse (buffer)
+(defun sofa-js-parse (buffer)
   "Return an ALIST of all global Javascript functions in BUFFER.
 
 All functions in BUFFER must have the following form:
@@ -1602,7 +1603,7 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
                 (setq oldend -1)))))))
     data))
 
-(defun couchdb-js-function (buffer function-name)
+(defun sofa-js-function (buffer function-name)
   "Return a string that contains the function definition of FUNCTION-NAME."
   (with-current-buffer buffer
     (save-excursion
@@ -1622,8 +1623,8 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
             (error nil)))))))
 
 
-(defun couchdb-put-design (database design doc &optional rev-id)
-  (let ((url (couchdb-view-endpoint database design)))
+(defun sofa-put-design (database design doc &optional rev-id)
+  (let ((url (sofa-view-endpoint database design)))
     (if (bufferp doc)
         nil                             ;TODO: what if DOC is buffer?
       (when rev-id
@@ -1649,9 +1650,9 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
         (cdr (assoc "rev" parsed))))))
 
   
-(defun couchdb-get-design-info (database design &optional buffer)
-  (let ((url (concat (couchdb-view-endpoint database design) "/_info")))
-    (couchdb-get url buffer)))
+(defun sofa-get-design-info (database design &optional buffer)
+  (let ((url (concat (sofa-view-endpoint database design) "/_info")))
+    (sofa-get url buffer)))
 
 ;; (curl/http-start-recv 'get
 ;;           "http://username:password@localhost:5984/fs/_design/fs/_view/path"
@@ -1659,22 +1660,22 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
 ;;           (lambda (proc event)
 ;;             (curl/http-body (point-min) (point-max) nil 'utf-8-dos)))
 
-(defun couchdb-get-view (database design view &optional buffer &rest params)
-  (let ((url (apply 'couchdb-view-endpoint
+(defun sofa-get-view (database design view &optional buffer &rest params)
+  (let ((url (apply 'sofa-view-endpoint
                     (append (list database design view) params))))
-    (couchdb-get url buffer)))
+    (sofa-get url buffer)))
 
-(defvar couchdb-history-database-name nil
-  "History list of read couchdb database name")
+(defvar sofa-history-database-name nil
+  "History list of read sofa database name")
 
-(defvar couchdb-history-design-name nil
-  "History list of read couchdb design document name")
+(defvar sofa-history-design-name nil
+  "History list of read sofa design document name")
 
-(defun couchdb-read-database-name-from-minibuffer (prompt)
+(defun sofa-read-database-name-from-minibuffer (prompt)
   "Completing read the database name from the minibuffer."
-  (let* ((name-list (couchdb-databases))
+  (let* ((name-list (sofa-databases))
          (default (car (member-if (lambda (name) (member name name-list))
-                                  couchdb-history-database-name)))
+                                  sofa-history-database-name)))
          (choice ""))
     (setq prompt (if default
                      (format "%s [%s] " prompt default)
@@ -1684,15 +1685,15 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
                                     (lambda (name)
                                       (member name name-list))
                                     'valid-only nil
-                                    'couchdb-history-database-name
+                                    'sofa-history-database-name
                                     default)))
     choice))
 
-(defun couchdb-read-design-name-from-minibuffer (database prompt)
+(defun sofa-read-design-name-from-minibuffer (database prompt)
   "Completing read the design document name from the minibuffer."
-  (let* ((name-list (couchdb-get-all-designs database))
+  (let* ((name-list (sofa-get-all-designs database))
          (default (car (member-if (lambda (name) (member name name-list))
-                                  couchdb-history-design-name)))
+                                  sofa-history-design-name)))
          (choice ""))
     (setq prompt (if default
                      (format "%s [%s] " prompt default)
@@ -1702,26 +1703,26 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
                                     (lambda (name)
                                       (member name name-list))
                                     'valid-only nil
-                                    'couchdb-history-design-name
+                                    'sofa-history-design-name
                                     default)))
     choice))
 
 
   
-(defun couchdb-get-document (database doc-id &optional buffer)
+(defun sofa-get-document (database doc-id &optional buffer)
   ;; TODO: If RAW is non-nil, return a buffer containing the JSON doc.
-  (let ((url (concat (couch-endpoint database) "/" 
+  (let ((url (concat (sofa-endpoint database) "/" 
                      (url-hexify-string doc-id)))
         result)
     (setq result (curl/http-recv 'get url buffer))
     ;; TODO: check http status first
 
     (if buffer
-        (when couchdb-json-prettifier
+        (when sofa-json-prettifier
           (with-current-buffer buffer
             (copy-region-as-kill (point-min) (point-max))
             (unless (eq (shell-command-on-region (point-min) (point-max)
-                                     couchdb-json-prettifier nil 'replace
+                                     sofa-json-prettifier nil 'replace
                                      shell-command-default-error-buffer t) 0)
               (erase-buffer)
               ;; TODO: need to refind below line for `undo' feature.
@@ -1730,11 +1731,11 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
         (json-read-from-string (cdr result))))))
 
 
-(defun couchdb-put-attachment (database doc-id filename &optional rev-id)
+(defun sofa-put-attachment (database doc-id filename &optional rev-id)
 )
 
-(defun couchdb-put-document (database doc-id doc &optional rev-id)
-  (let ((url (concat (couch-endpoint database) "/" 
+(defun sofa-put-document (database doc-id doc &optional rev-id)
+  (let ((url (concat (sofa-endpoint database) "/" 
                      (url-hexify-string doc-id)))
         result)
     ;; TODO: If doc is string or buffer, use the buffer contents.
@@ -1761,9 +1762,9 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
           (error (cdr err)))
         (cdr (assoc "rev" parsed))))))
 
-(defun couchdb-document-revision (database doc-id)
+(defun sofa-document-revision (database doc-id)
   "Get the latest document revision of DOC-ID from DATABASE."
-  (let ((url (concat (couch-endpoint database) "/"
+  (let ((url (concat (sofa-endpoint database) "/"
                      (url-hexify-string doc-id))))
     (setq result (curl/http-recv 'head url)
           rev-id (assoc-value "Etag" (car result)))
@@ -1771,14 +1772,14 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
          (strip-etag rev-id))))
 
 
-(defun couchdb-view-delete-documents ()
+(defun sofa-view-delete-documents ()
   (interactive)
-  (let ((docs (couchdb--map-over-marks 
+  (let ((docs (sofa--map-over-marks 
                (lambda () 
                  (let ((pos (+ 3 (point))))
-                   (cons (get-text-property pos 'couch-key)
-                         (get-text-property pos 'couch-rev))))))
-        (url (concat (couch-endpoint couchdb-database-name)
+                   (cons (get-text-property pos 'sofa-key)
+                         (get-text-property pos 'sofa-rev))))))
+        (url (concat (sofa-endpoint sofa-database-name)
                      "/_bulk_docs"))
         result)
     (when (> (length docs) 0)
@@ -1813,7 +1814,7 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
 
 
             
-(defun couchdb-view-refresh-marked-revision ()
+(defun sofa-view-refresh-marked-revision ()
   "Refresh the marked entries for the updated status.
 
 If the marked document is deleted, delete the entry from the buffer,
@@ -1823,16 +1824,16 @@ Except updating for deletion, mark should stay the same."
 )
 
 
-(defun couchdb-delete-document (database doc-id &optional rev-id)
+(defun sofa-delete-document (database doc-id &optional rev-id)
   "Delete the document, DOC-ID with revision REV-ID from DATABASE.
 
 If REV-ID is nil, it will automatically retrived.
 This function returns the revision id of the delete operation."
   (unless rev-id
-    (setq rev-id (couchdb-document-revision database doc-id)))
+    (setq rev-id (sofa-document-revision database doc-id)))
   (unless rev-id
     (error "Etag missing"))
-  (let ((url (concat (couch-endpoint database) "/"
+  (let ((url (concat (sofa-endpoint database) "/"
                      (url-hexify-string doc-id) "?rev=" 
                      rev-id))
         result)
@@ -1879,7 +1880,7 @@ Note that it ignores back-up files (e.g. \"filename~\") and tempory files (e.g. 
             (funcall function (concat (file-name-as-directory dir)
                                       fname))))))))
 
-(defun couchdb-import-directory (directory &optional recursive)
+(defun sofa-import-directory (directory &optional recursive)
   (walk-directories directory
                     (lambda (name)
                       (let ((attr (file-attributes name 'integer))
@@ -1903,5 +1904,5 @@ Note that it ignores back-up files (e.g. \"filename~\") and tempory files (e.g. 
                              
                      
 
-(provide 'couchdb)
-;;; couchdb.el ends here
+(provide 'sofa)
+;;; sofa.el ends here
