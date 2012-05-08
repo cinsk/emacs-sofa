@@ -236,8 +236,12 @@ document."
     ;; TODO: Do I need to refresh the current view page?
     ;;       It is possible to have outdated page for now...
     (message "Loading documents...")
+<<<<<<< HEAD:sofa.el
     (setq buffer (sofa--load-documents sofa-database-name keys))
     ;; If `sofa--load-documents' failed, BUFFER will be nil.
+=======
+    (setq buffer (couchdb--load-documents couchdb-database-name keys))
+>>>>>>> 42adb634f243f0504581ad2fee60ef1d8a4e9e62:couchdb.el
     (and buffer
          (pop-to-buffer buffer))))
 
@@ -380,7 +384,11 @@ and `sofa-skip'"
       
 
 
+<<<<<<< HEAD:sofa.el
 (defun sofa--prettify-buffer (&optional buffer)
+=======
+(defun couchdb--prettify-buffer (&optional buffer)
+>>>>>>> 42adb634f243f0504581ad2fee60ef1d8a4e9e62:couchdb.el
   "Prettify JSON text in BUFFER.
 
 If BUFFER is nil, this function uses the current buffer.
@@ -442,9 +450,14 @@ function will revert to the original text."
 (defun sofa-kill-buffer ()
   "kill the current buffer"
   (interactive)
+<<<<<<< HEAD:sofa.el
   ;; TODO: since by default, Emacs asks for killing if the buffer is
   ;;       modified.  So, I don't think that this function is
   ;;       necessary.
+=======
+  ;; TODO: since by default, Emacs asks for killing if the buffer is modified.
+  ;; So, I don't think that this function is necessary.
+>>>>>>> 42adb634f243f0504581ad2fee60ef1d8a4e9e62:couchdb.el
   (let ((buffer (current-buffer)))
     (if (or (not (buffer-modified-p buffer))
             (yes-or-no-p "The buffer modified.  Are you sure to kill?"))
@@ -532,10 +545,17 @@ If no error, returns t."
     (sofa-reload-design)))
   
 
+<<<<<<< HEAD:sofa.el
 (defun sofa--remove-succeeded-docs (buffer response)
   "Remove the successfully processed documents in the current bulk operation.
 
 BUFFER is `sofa-document-buffer', and RESPONSE is a string that contains
+=======
+(defun couchdb--remove-succeeded-docs (buffer response)
+  "Remove the successfully processed documents in the current bulk operation.
+
+BUFFER is `couchdb-document-buffer', and RESPONSE is a string that contains
+>>>>>>> 42adb634f243f0504581ad2fee60ef1d8a4e9e62:couchdb.el
 the returned HTTP resonse body.
 
 The purpose of this function is to process remaining job after
@@ -545,7 +565,11 @@ commiting documents modification in bulk mode.
 2. (TODO) display the error messages for each remaining document."
   (let ((json-input (json-read-from-string response))
         processed reasons)
+<<<<<<< HEAD:sofa.el
     (sofa/doarray (elem json-input)
+=======
+    (couchdb/doarray (elem json-input)
+>>>>>>> 42adb634f243f0504581ad2fee60ef1d8a4e9e62:couchdb.el
       (if (assoc-value 'error elem)
           (setq reasons (cons (list (assoc-value 'id elem)
                                     (assoc-value 'error elem)
@@ -562,7 +586,11 @@ commiting documents modification in bulk mode.
                             (point-min) (point-max))))
                (json-docs (assoc-value 'docs json-body []))
                errored-docs)
+<<<<<<< HEAD:sofa.el
           (sofa/doarray (elem json-docs)
+=======
+          (couchdb/doarray (elem json-docs)
+>>>>>>> 42adb634f243f0504581ad2fee60ef1d8a4e9e62:couchdb.el
             (unless (member (assoc-value '_id elem) processed)
               ;; TODO: how to let the user knows about the error message?
               (setq errored-docs (cons elem errored-docs))))
@@ -576,7 +604,11 @@ commiting documents modification in bulk mode.
             (setcdr (assoc 'docs json-body) errored-docs)
             (erase-buffer)
             (insert (json-encode-alist json-body))
+<<<<<<< HEAD:sofa.el
             (sofa--prettify-buffer)
+=======
+            (couchdb--prettify-buffer)
+>>>>>>> 42adb634f243f0504581ad2fee60ef1d8a4e9e62:couchdb.el
             (set-buffer-modified-p nil)
 
             (let ((msg ""))
@@ -590,7 +622,11 @@ commiting documents modification in bulk mode.
               (message (substring msg 0 -1))) ; remove trailing newline
             nil))))))
 
+<<<<<<< HEAD:sofa.el
 (defun sofa--commit-bulk-documents ()
+=======
+(defun couchdb--commit-bulk-documents ()
+>>>>>>> 42adb634f243f0504581ad2fee60ef1d8a4e9e62:couchdb.el
   ;; TODO: validation of buffer?
   (if (not (buffer-modified-p (current-buffer)))
       (message "Nothing to commit")
@@ -605,8 +641,13 @@ commiting documents modification in bulk mode.
         (let* ((headers (car result))
                (body (cdr result))
                (status (string-to-int (assoc-value "Status" headers "0"))))
+<<<<<<< HEAD:sofa.el
           (setq sofa-body body
                 sofa-status status)
+=======
+          (setq couchdb-body body
+                couchdb-status status)
+>>>>>>> 42adb634f243f0504581ad2fee60ef1d8a4e9e62:couchdb.el
           ;; if on error, show the error and exit.  if on success,
           ;; update the parent buffer, and exit if on partial success,
           ;; update hte parent buffer, and remove the succeeded
@@ -614,15 +655,22 @@ commiting documents modification in bulk mode.
           (cond ((eq status 201)
                  ;; The doc is updated.
                  ;; TODO: STATUS will be still 201 if there's only conflict!!
+<<<<<<< HEAD:sofa.el
                  (when (sofa--remove-succeeded-docs buffer body)
                    ;; everything is okay, so removing the edit buffer.
                    (sofa--hide-window-kill-buffer buffer)
+=======
+                 (when (couchdb--remove-succeeded-docs buffer body)
+                   ;; everything is okay, so removing the edit buffer.
+                   (couchdb--hide-window-kill-buffer buffer)
+>>>>>>> 42adb634f243f0504581ad2fee60ef1d8a4e9e62:couchdb.el
                    ;; TODO: remove the marks!!
                    ))
                  
                 (t
                  ;; If STATUS is 400, it means "bad request" (malformed JSON).
 
+<<<<<<< HEAD:sofa.el
                  ;; something goes wrong; the BODY may contains
                  ;; additional information about the error.
 
@@ -632,6 +680,13 @@ commiting documents modification in bulk mode.
                             (assoc-value 'error errinfo "Unknown")
                             (assoc-value 'reason errinfo "Unknown")))
                  ))
+=======
+                 ;; something goes wrong
+                 (message "CouchDB: %s: %s"
+                          (assoc-value "error" headers "Unknown")
+                          (assoc-value "reason" headers "Unknown")))
+                 )
+>>>>>>> 42adb634f243f0504581ad2fee60ef1d8a4e9e62:couchdb.el
         )))))
 
   
