@@ -12,7 +12,7 @@ development, please let me know.
 
 For the usage and the installation, please see the wiki page:
 
-  http://github.com/cinsk/emacs-couchdb/wiki/
+  http://github.com/cinsk/emacs-sofa/wiki/
 
 
 Dependencies
