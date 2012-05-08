@@ -356,17 +356,16 @@ document."
             (goto-char docs-begin)))))))
 
 
-(defun couchdb-view-load-doc-other-window ()
+(defun couchdb-view-load-documents-other-window ()
   (interactive)
   ;; TODO: if there's marked doc(s), load that in batch mode?
-  (let ((keys (couchdb--marked-keys)))
-    (when keys
-      (if (> (length keys) 1)
-          ;; TODO: multi doc load
-          (error "not implemented yet.")
-        (car doc)
-        ))))
+  (let ((keys (couchdb--marked-keys))
+        buffer)
+    (message "Loading documents...")
+    (setq buffer (couchdb--load-documents couchdb-database-name keys))
+    (pop-to-buffer buffer)))
 
+  
 (defun couchdb--load-document (database key)
   "Load the document where the id is KEY from DATABASE, return the buffer."
   ;; TODO: I need to decide the mechanism of loading individual
@@ -727,6 +726,31 @@ If no error, returns t."
     ;; reload the design doc.
     (couchdb-reload-design)))
   
+
+(defun couchdb--commit-bulk-documents ()
+  ;; TODO: validation of buffer?
+  (if (not (buffer-modified-p (current-buffer)))
+      (message "Nothing to commit")
+    (let ((url (concat (couch-endpoint couchdb-database-name)
+                       "/_bulk_docs"))
+          (buffer (current-buffer))
+          result)
+      (curl/with-temp-buffer
+        (insert-buffer buffer)
+        (setq result (curl/http-send-buffer 'POST url (current-buffer)
+                                            "application/json"))
+        (let ((headers (car result))
+              (body (cdr result)))
+
+          ;; TODO: check the return status
+          ;; Successful return will be HTTP 201
+
+          ;; if on error, show the error and exit.  if on success,
+          ;; update the parent buffer, and exit if on partial success,
+          ;; update hte parent buffer, and remove the succeeded
+          ;; content from the buffer?
+        ))))
+
   
 (defun couchdb-commit-buffer ()
   "Commit the change into the CouchDB"
@@ -745,6 +769,7 @@ If no error, returns t."
     (define-key map [?m] #'couchdb-view-mark)
     (define-key map [?u] #'couchdb-view-unmark)
     (define-key map [?q] #'couchdb-view-quit)
+    (define-key map [?o] #'couchdb-view-load-documents-other-window)
     (define-key map [(control ?x) ?\]] #'couchdb-view-forward-page)
     (define-key map [(control ?x) ?\[] #'couchdb-view-backward-page)
 
@@ -780,6 +805,10 @@ If no error, returns t."
 
 (defvar couchdb-json-mode-map (couchdb--json-mode-map)
   "Keymap for CouchDB mode")
+
+(defvar couchdb-read-only-map (let ((map (make-keymap)))
+                                (suppress-keymap map 'nodigits)
+                                map))
 
 (defun couchdb--prepare-local-variables ()
   (make-variable-buffer-local 'couchdb-database-name)
@@ -868,13 +897,113 @@ If no error, returns t."
         (get-buffer-create couchdb-document-buffer)
       buffer)))
 
-(defun couchdb-load-documents (database keys)
+(defun couchdb--load-documents (database keys)
   "Load the documents with KEYS into the buffer, and return it."
 
   ;; TODO: if KEYS contains just one key, set-up for editing,
   ;; otherwise just read-only mode.
 
   ;; curl -d '{"keys":["bar","baz"]}' -X POST http://127.0.0.1:5984/foo/_all_docs?include_docs=true
+
+  ;; TODO: the received document should be transformed to the form for
+  ;;       modification.
+  (let ((body (json-encode-alist (list (cons "keys" (vconcat keys)))))
+        (url (couchdb-view-endpoint database nil nil :include-docs t))
+        (buffer (couchdb-safe-document-buffer))
+        status
+        result)
+
+    (if (buffer-modified-p buffer)
+        (error "not implemented yet."))
+
+    (curl/with-temp-buffer
+      (insert body)
+      (setq result (curl/http-send-buffer 'POST
+                                          url
+                                          (current-buffer)
+                                          "application/json")))
+    (setq status (assoc-value "Status" (car result) "404"))
+    (if (not (string-equal status "200"))
+        (progn (message "CouchDB returns HTTP %s code" status)
+               nil)
+
+
+      (with-current-buffer buffer
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          ;;(insert (cdr result))
+          (let* ((json (json-read-from-string (cdr result)))
+                 (rows (assoc-value 'rows json []))
+                 (res  nil))
+            ;; The purpose of this `let*' is to convert the JSON
+            ;; output from CouchDB Bulk fetching API to the JSON data
+            ;; for bulk doc modification.
+            (couchdb/doarray (elem rows)
+              (let ((doc (assoc-value 'doc elem nil)))
+                (setq res (cons doc res))))
+            (insert (json-encode-alist (list (cons 'docs 
+                                                   (vconcat (nreverse res)))))))
+          
+          (couchdb--prettify-buffer buffer)
+
+          (with-current-buffer buffer
+            ;; I need to think carefully here.  Should I make some
+            ;; JSON syntactic components read-only?  For example, text
+            ;; outside of user's interest:
+            ;;
+            ;; {
+            ;;   "docs": [
+            ;;     ...
+            ;;   ]
+            ;; }
+
+            (when nil
+              ;; this causes `couchdb--language' failed.
+              (save-excursion
+                (goto-char (point-min))
+                (if (not (eq (car (json-forward-syntax)) 4))
+                    ;; `json-forward-syntax' should return (4 . "{")
+                    (error "something is wrong"))
+                (if (not (eq (car (json-forward-syntax)) 15))
+                    ;; `json-forward-syntax' should return (15 . "docs")
+                    (error "something is wrong"))
+                (if (not (eq (car (json-forward-syntax)) 1))
+                    ;; `json-forward-syntax' should return (1 . ":")
+                    (error "something is wrong"))
+                (if (not (eq (car (json-forward-syntax)) 4))
+                    ;; `json-forward-syntax' should return (4 . "[")
+                    (error "something is wrong"))
+                (put-text-property (point-min) (point)
+                                   'keymap couchdb-read-only-map)
+                (put-text-property (point-min) (point)
+                                   'intangible t)
+                )))
+
+          (set-buffer-modified-p nil)
+          (set-visited-file-name (make-temp-file "couchdb-"))
+          ;; `set-visited-file-name' changes the buffer name so revert it.
+          (rename-buffer couchdb-document-buffer)
+          (save-buffer 0)
+          (couchdb-json-mode)
+          ;; TODO: set related local variables!!!
+
+          ;; (setq couchdb-database-name database ...)
+          (setq couchdb-database-name database
+                couchdb-source-url url
+                couchdb-commit-function #'couchdb--commit-bulk-documents)))
+      buffer)))
+
+
+(defun couchdb--load-documents/old (database keys)
+  "Load the documents with KEYS into the buffer, and return it."
+
+  ;; TODO: if KEYS contains just one key, set-up for editing,
+  ;; otherwise just read-only mode.
+
+  ;; curl -d '{"keys":["bar","baz"]}' -X POST http://127.0.0.1:5984/foo/_all_docs?include_docs=true
+
+  ;; TODO: the received document should be transformed to the form for
+  ;;       modification.
   (let ((body (json-encode-alist (list (cons "keys" (vconcat keys)))))
         (url (couchdb-view-endpoint database nil nil :include-docs t))
         (buffer (couchdb-safe-document-buffer))
@@ -900,8 +1029,15 @@ If no error, returns t."
           (insert (cdr result))
           (couchdb--prettify-buffer buffer)
           (set-buffer-modified-p nil)
+          (set-visited-file-name (make-temp-file "couchdb-"))
+          ;; `set-visited-file-name' changes the buffer name so revert it.
+          (rename-buffer couchdb-document-buffer)
+          (save-buffer 0)
           (couchdb-json-mode)
           ;; TODO: set related local variables!!!
+
+          ;; (setq couchdb-database-name database ...)
+                
           ))
       
       buffer)))
@@ -1190,6 +1326,7 @@ Note that the returned value does not contain the enclosing double-quote."
         (progn
           (message "nothing changed.")
           ;; TODO: do we need to kill the editing buffer?
+          (couchdb-edit-kill-buffer)
           )
       (widen)
       ;;(while (search-forward "\n" nil t)
@@ -1232,17 +1369,22 @@ otherwise DOC should be JSON alist."
   "Set the major mode of DST-BUFFER according to KEYS from SRC-BUFFER"
   ;; TODO: it is not a good idea to parse the whole buffer in this time.
   ;;       it's better to parse it after loading the design doc.
-  (let ((lang (couchdb--language src-buffer)))
-    (cond ((or (and (eq (length keys) 3)
-                    (string-equal (nth 0 keys) "views"))
-               (and (eq (length keys) 2)
-                    (string-equal (nth 0 keys) "shows")))
-           (with-current-buffer dst-buffer
-             (javascript-mode)))
-          (t 
-           (with-current-buffer dst-buffer
-             (text-mode))))))
 
+  (if (buffer-local-value 'couchdb-design-name src-buffer)
+      ;; If SRC-BUFFER reflects a design document, use "language" property
+      (let ((lang (couchdb--language src-buffer)))
+        (cond ((or (and (eq (length keys) 3)
+                        (string-equal (nth 0 keys) "views"))
+                   (and (eq (length keys) 2)
+                        (string-equal (nth 0 keys) "shows")))
+               (with-current-buffer dst-buffer
+                 (javascript-mode)))
+              (t 
+               (with-current-buffer dst-buffer
+                 (text-mode)))))
+    ;; TODO: what major mode?
+    (with-current-buffer dst-buffer
+      (text-mode))))
 
 (defun couchdb--clear-editing-status (&optional force)
   "Clear the editing status on the current buffer."
@@ -1261,7 +1403,9 @@ otherwise DOC should be JSON alist."
   "Edit current JSON value in other buffer."
   (interactive)
 
-  (if (and couchdb-edit-buffer (buffer-live-p couchdb-edit-buffer))
+  (if (and couchdb-edit-buffer
+           (buffer-live-p couchdb-edit-buffer)
+           (buffer-modified-p couchdb-edit-buffer))
       (progn (pop-to-buffer couchdb-edit-buffer)
              (message "You need to commit or to cancel the on-going editing"))
     (couchdb--clear-editing-status)
