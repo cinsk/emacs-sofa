@@ -361,9 +361,12 @@ document."
   ;; TODO: if there's marked doc(s), load that in batch mode?
   (let ((keys (couchdb--marked-keys))
         buffer)
+    ;; TODO: Do I need to refresh the current view page?
+    ;;       It is possible to have outdated page for now...
     (message "Loading documents...")
     (setq buffer (couchdb--load-documents couchdb-database-name keys))
-    (pop-to-buffer buffer)))
+    (and buffer
+         (pop-to-buffer buffer))))
 
   
 (defun couchdb--load-document (database key)
@@ -502,13 +505,15 @@ and `couchdb-skip'"
       
 
 
-(defun couchdb--prettify-buffer (buffer)
+(defun couchdb--prettify-buffer (&optional buffer)
   "Prettify JSON text in BUFFER.
+
+If BUFFER is nil, this function uses the current buffer.
 
 If the prettification failed (possibly, due to the malformed data), this
 function will revert to the original text."
   ;; TODO: refine this.
-  (with-current-buffer buffer
+  (with-current-buffer (or buffer (current-buffer))
     (copy-region-as-kill (point-min) (point-max))
     (unless (eq (shell-command-on-region 
                  (point-min) (point-max)
@@ -640,6 +645,8 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
 (defun couchdb-kill-buffer ()
   "kill the current buffer"
   (interactive)
+  ;; TODO: since by default, Emacs asks for killing if the buffer is modified.
+  ;; So, I don't think that this function is necessary.
   (let ((buffer (current-buffer)))
     (if (or (not (buffer-modified-p buffer))
             (yes-or-no-p "The buffer modified.  Are you sure to kill?"))
@@ -727,6 +734,64 @@ If no error, returns t."
     (couchdb-reload-design)))
   
 
+(defun couchdb--remove-succeeded-docs (buffer response)
+  "Remove the successfully processed documents in the current bulk operation.
+
+BUFFER is `couchdb-document-buffer', and RESPONSE is a string that contains
+the returned HTTP resonse body.
+
+The purpose of this function is to process remaining job after
+commiting documents modification in bulk mode.
+
+1. Remove the successfully committed document in the current buffer,
+2. (TODO) display the error messages for each remaining document."
+  (let ((json-input (json-read-from-string response))
+        processed reasons)
+    (couchdb/doarray (elem json-input)
+      (if (assoc-value 'error elem)
+          (setq reasons (cons (list (assoc-value 'id elem)
+                                    (assoc-value 'error elem)
+                                    (assoc-value 'reason elem))
+                              reasons))
+        (setq processed (cons (assoc-value 'id elem) processed))))
+    (setq reasons (nreverse reasons))
+
+    ;; PROCESSED contains the list of ID that processed successfully.
+    (with-current-buffer buffer
+      (save-excursion
+        (let* ((json-body (json-read-from-string
+                           (buffer-substring-no-properties 
+                            (point-min) (point-max))))
+               (json-docs (assoc-value 'docs json-body []))
+               errored-docs)
+          (couchdb/doarray (elem json-docs)
+            (unless (member (assoc-value '_id elem) processed)
+              ;; TODO: how to let the user knows about the error message?
+              (setq errored-docs (cons elem errored-docs))))
+          (setq errored-docs (vconcat (nreverse errored-docs)))
+
+          (if (eq (length errored-docs) 0)
+              ;; all processed successfully!
+              (progn (set-buffer-modified-p nil)
+                     t)
+            ;; Remove all successfully processed document in the current buffer.
+            (setcdr (assoc 'docs json-body) errored-docs)
+            (erase-buffer)
+            (insert (json-encode-alist json-body))
+            (couchdb--prettify-buffer)
+            (set-buffer-modified-p nil)
+
+            (let ((msg ""))
+              (mapc (lambda (err)
+                      (setq msg (concat msg
+                                        (format "%s: %s: %s\n"
+                                                (nth 0 err) 
+                                                (nth 1 err) 
+                                                (nth 2 err)))))
+                    reasons)
+              (message (substring msg 0 -1))) ; remove trailing newline
+            nil))))))
+
 (defun couchdb--commit-bulk-documents ()
   ;; TODO: validation of buffer?
   (if (not (buffer-modified-p (current-buffer)))
@@ -739,17 +804,33 @@ If no error, returns t."
         (insert-buffer buffer)
         (setq result (curl/http-send-buffer 'POST url (current-buffer)
                                             "application/json"))
-        (let ((headers (car result))
-              (body (cdr result)))
-
-          ;; TODO: check the return status
-          ;; Successful return will be HTTP 201
-
+        (let* ((headers (car result))
+               (body (cdr result))
+               (status (string-to-int (assoc-value "Status" headers "0"))))
+          (setq couchdb-body body
+                couchdb-status status)
           ;; if on error, show the error and exit.  if on success,
           ;; update the parent buffer, and exit if on partial success,
           ;; update hte parent buffer, and remove the succeeded
           ;; content from the buffer?
-        ))))
+          (cond ((eq status 201)
+                 ;; The doc is updated.
+                 ;; TODO: STATUS will be still 201 if there's only conflict!!
+                 (when (couchdb--remove-succeeded-docs buffer body)
+                   ;; everything is okay, so removing the edit buffer.
+                   (couchdb--hide-window-kill-buffer buffer)
+                   ;; TODO: remove the marks!!
+                   ))
+                 
+                (t
+                 ;; If STATUS is 400, it means "bad request" (malformed JSON).
+
+                 ;; something goes wrong
+                 (message "CouchDB: %s: %s"
+                          (assoc-value "error" headers "Unknown")
+                          (assoc-value "reason" headers "Unknown")))
+                 )
+        )))))
 
   
 (defun couchdb-commit-buffer ()
@@ -913,8 +994,11 @@ If no error, returns t."
         status
         result)
 
-    (if (buffer-modified-p buffer)
-        (error "not implemented yet."))
+    (when nil
+      ;; huh?? even mark/unmark could change the buffer-modified-p.
+      ;; TODO: what's the purpose here??
+      (if (buffer-modified-p buffer)
+          (error "not implemented yet.")))
 
     (curl/with-temp-buffer
       (insert body)
