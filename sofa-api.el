@@ -301,6 +301,47 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
                     (append (list database design view) params))))
     (sofa-get url buffer)))
 
+
+(defun sofa-get-bulk-documents (database docs &optional buffer 
+                                         noerror nocontent raw)
+  "Read document(s) from DATABASE.
+
+DOCS is a list of document IDs.
+
+If BUFFER is non-nil, the document contents will be stored in BUFFER.
+
+If NOERROR is non-nil, this function will not raise an error.
+
+If NOCONTENT is non-nil, this function retrives ID and VALUE only.  Note
+that this is only meaningful when DOC-ID is a list of document IDs.
+
+If RAW is non-nil, this function will not prettify the document contents."
+  ;; TODO: If RAW is non-nil, return a buffer containing the JSON doc.
+  (let ((in (json-encode-alist (list (cons 'keys (vconcat keys)))))
+        (url (sofa-view-endpoint database nil nil 
+                                 :include-docs
+                                 (if nocontent nil t)))
+        result)
+    (curl/with-temp-buffer
+      (insert in)
+      (setq result (curl/http-send-buffer 'POST url (current-buffer))))
+
+    ;; TODO: check http status first
+
+    (if buffer
+        (when sofa-json-prettifier
+          (with-current-buffer buffer
+            (copy-region-as-kill (point-min) (point-max))
+            (unless (eq (shell-command-on-region (point-min) (point-max)
+                                     sofa-json-prettifier nil 'replace
+                                     shell-command-default-error-buffer t) 0)
+              (erase-buffer)
+              ;; TODO: need to refind below line for `undo' feature.
+              (insert-for-yank (current-kill 0)))))
+      (let ((json-key-type 'string))
+        (json-read-from-string (cdr result))))))
+
+
 (defun sofa-get-document (database doc-id &optional buffer)
   ;; TODO: If RAW is non-nil, return a buffer containing the JSON doc.
   (let ((url (concat (sofa-endpoint database) "/" 
