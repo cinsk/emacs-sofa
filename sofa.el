@@ -1494,9 +1494,8 @@ Except updating for deletion, mark should stay the same."
   (let ((in (json-encode-alist (list (cons 'keys 
                                            (vconcat (sofa--marked-keys))))))
         (url (sofa-view-endpoint sofa-database-name)))
+    (error "not implemented yet")))
 
-    
-)
 
 
 (defun walk-directories (directory function &optional norecursion match nosort)
