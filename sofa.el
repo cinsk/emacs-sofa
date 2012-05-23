@@ -781,6 +781,7 @@ commiting documents modification in bulk mode.
         (get-buffer-create sofa-document-buffer)
       buffer)))
 
+
 (defun sofa--load-documents (database keys)
   "Load the documents with KEYS into the buffer, and return it."
 
@@ -791,6 +792,8 @@ commiting documents modification in bulk mode.
 
   ;; TODO: the received document should be transformed to the form for
   ;;       modification.
+
+  ;; TODO: need to load multiple docs (id, rev only)
   (let ((body (json-encode-alist (list (cons "keys" (vconcat keys)))))
         (url (sofa-view-endpoint database nil nil :include-docs t))
         (buffer (sofa-safe-document-buffer))
@@ -1488,6 +1491,11 @@ If the marked document is deleted, delete the entry from the buffer,
 If the marked document has different revision, refresh the buffer and property.
 
 Except updating for deletion, mark should stay the same."
+  (let ((in (json-encode-alist (list (cons 'keys 
+                                           (vconcat (sofa--marked-keys))))))
+        (url (sofa-view-endpoint sofa-database-name)))
+
+    
 )
 
 
