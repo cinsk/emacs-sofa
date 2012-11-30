@@ -20,7 +20,7 @@
 
 ;;; Commentary:
 
-;; 
+;;
 
 ;;; Code:
 
@@ -96,7 +96,7 @@
           (t
            (error "invalid argument(s)")))))
 
-      
+
 (defun sofa-couchdb-url (&optional database)
   (let ((hex-nam (url-hexify-string sofa-user-name))
         (hex-pwd (url-hexify-string sofa-user-password)))
@@ -136,13 +136,13 @@ On error, raise `error' with the reason, otherwise return t."
         result)
     (curl/with-temp-buffer
       (setq result (curl/http-send-buffer 'put url nil nil)))
-    (let ((json-key-type 'string) 
+    (let ((json-key-type 'string)
           parsed)
       ;; TODO: check the HTTP status first.
       (setq parsed (json-read-from-string (cdr result)))
       (let ((ok (assoc "ok" parsed))
             (err (assoc "error" parsed)))
-        (unless ok 
+        (unless ok
           (error (cdr err)))
         (cdr ok)))))
 
@@ -163,7 +163,7 @@ On error, raise `error' with the reason, otherwise return t."
     (if (eq status 200)
         (json-read-from-string body))))
 
-  
+
 (defun sofa-get (url &optional buffer)
   "HTTP GET request to URL.
 
@@ -179,7 +179,7 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
         (when sofa-json-prettifier
           (with-current-buffer buffer
             (copy-region-as-kill (point-min) (point-max))
-            (unless (eq (shell-command-on-region 
+            (unless (eq (shell-command-on-region
                          (point-min) (point-max)
                          sofa-json-prettifier nil 'replace
                          shell-command-default-error-buffer t) 0)
@@ -189,14 +189,14 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
       (let ((json-key-type 'string))
         (json-read-from-string (cdr result))))))
 
-    
+
 (defun parse-query-params (params)
   (flet ((keyword-name (key)
                        (replace-regexp-in-string "-" "_"
                                                  (substring
                                                   (symbol-name key) 1) t t))
          (param-eval (value &optional json)
-                     (cond ((stringp value) 
+                     (cond ((stringp value)
                             (if json (json-encode-string value) value))
                            ((listp value)
                             (json-encode-alist value))
@@ -204,9 +204,9 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
                             (json-encode-array value))
                            ((null value) "false")
                            ((eq t value) "true")
-                           ((numberp value) 
+                           ((numberp value)
                             (format "%S" value))))
-                     
+
          (parse (key value params result)
                 ;; (format "&%s=%s"
                 ;;         (url-hexify-string
@@ -222,7 +222,7 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
                     (let ((pair (format "&%s=%s"
                                         (url-hexify-string
                                          (keyword-name key))
-                                        (url-hexify-string 
+                                        (url-hexify-string
                                          (param-eval value)))))
                       (parse (car params)
                              (cadr params)
@@ -244,7 +244,7 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
 
 (defun sofa-get-all-designs (database)
   "Return a list of design document names in DATABASE."
-  (let ((url (sofa-view-endpoint "hello" nil nil 
+  (let ((url (sofa-view-endpoint database nil nil
                                     :start-key "\"_design/\""
                                     :end-key "\"_design0\"")))
     (let* ((result nil)
@@ -272,20 +272,20 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
       (if (bufferp doc)
           (insert-buffer doc)
         (insert (json-encode-alist doc)))
-      (setq result 
+      (setq result
             (curl/http-send-buffer 'put url (current-buffer)
                                    "application/json")))
-    (let ((json-key-type 'string) 
+    (let ((json-key-type 'string)
           parsed)
       ;; TODO: check the HTTP status first.
       (setq parsed (json-read-from-string (cdr result)))
       (let ((ok (assoc "ok" parsed))
             (err (assoc "error" parsed)))
-        (unless ok 
+        (unless ok
           (error (cdr err)))
         (cdr (assoc "rev" parsed))))))
 
-  
+
 (defun sofa-get-design-info (database design &optional buffer)
   (let ((url (concat (sofa-view-endpoint database design) "/_info")))
     (sofa-get url buffer)))
@@ -302,7 +302,7 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
     (sofa-get url buffer)))
 
 
-(defun sofa-get-bulk-documents (database docs &optional buffer 
+(defun sofa-get-bulk-documents (database docs &optional buffer
                                          noerror nocontent raw)
   "Read document(s) from DATABASE.
 
@@ -318,7 +318,7 @@ that this is only meaningful when DOC-ID is a list of document IDs.
 If RAW is non-nil, this function will not prettify the document contents."
   ;; TODO: If RAW is non-nil, return a buffer containing the JSON doc.
   (let ((in (json-encode-alist (list (cons 'keys (vconcat keys)))))
-        (url (sofa-view-endpoint database nil nil 
+        (url (sofa-view-endpoint database nil nil
                                  :include-docs
                                  (if nocontent nil t)))
         result)
@@ -344,7 +344,7 @@ If RAW is non-nil, this function will not prettify the document contents."
 
 (defun sofa-get-document (database doc-id &optional buffer)
   ;; TODO: If RAW is non-nil, return a buffer containing the JSON doc.
-  (let ((url (concat (sofa-endpoint database) "/" 
+  (let ((url (concat (sofa-endpoint database) "/"
                      (url-hexify-string doc-id)))
         result)
     (setq result (curl/http-recv 'get url buffer))
@@ -368,7 +368,7 @@ If RAW is non-nil, this function will not prettify the document contents."
 )
 
 (defun sofa-put-document (database doc-id doc &optional rev-id)
-  (let ((url (concat (sofa-endpoint database) "/" 
+  (let ((url (concat (sofa-endpoint database) "/"
                      (url-hexify-string doc-id)))
         result)
     ;; TODO: If doc is string or buffer, use the buffer contents.
@@ -382,16 +382,16 @@ If RAW is non-nil, this function will not prettify the document contents."
 
     (curl/with-temp-buffer
       (insert (json-encode-alist doc))
-      (setq result 
+      (setq result
             (curl/http-send-buffer 'put url (current-buffer)
                                    "application/json")))
-    (let ((json-key-type 'string) 
+    (let ((json-key-type 'string)
           parsed)
       ;; TODO: check the HTTP status first.
       (setq parsed (json-read-from-string (cdr result)))
       (let ((ok (assoc "ok" parsed))
             (err (assoc "error" parsed)))
-        (unless ok 
+        (unless ok
           (error (cdr err)))
         (cdr (assoc "rev" parsed))))))
 
@@ -415,7 +415,7 @@ This function returns the revision id of the delete operation."
   (unless rev-id
     (error "Etag missing"))
   (let ((url (concat (sofa-endpoint database) "/"
-                     (url-hexify-string doc-id) "?rev=" 
+                     (url-hexify-string doc-id) "?rev="
                      rev-id))
         result)
     (setq result (curl/http-recv 'delete url))
@@ -424,16 +424,16 @@ This function returns the revision id of the delete operation."
     ;;
     ;; On failure:
     ;;   {"error":"unknown_error","reason":"badarg"}
-    
+
     ;; TODO: check HTTP status
     (let ((json-key-type 'string) parsed)
       (setq parsed (json-read-from-string (cdr result)))
       (let ((ok (assoc "ok" parsed))
             (err (assoc "error" parsed)))
-        (unless ok 
+        (unless ok
           (error (cdr err)))
         (cdr (assoc "rev" parsed))))))
-      
+
 
 
 
