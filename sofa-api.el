@@ -402,10 +402,11 @@ If RAW is non-nil, this function will not prettify the document contents."
   "Get the latest document revision of DOC-ID from DATABASE."
   (let ((url (concat (sofa-endpoint database) "/"
                      (url-hexify-string doc-id))))
-    (setq result (curl/http-recv 'head url)
-          rev-id (assoc-value "Etag" (car result)))
-    (and rev-id
-         (strip-etag rev-id))))
+    (setq result (car (curl/http-recv 'head url))
+          rev-id (or (assoc-value "Etag" result)
+		     (assoc-value "ETag" result)
+		     (assoc-value "etag" result)))
+    (and rev-id (strip-etag rev-id))))
 
 
 (defun sofa-delete-document (database doc-id &optional rev-id)
