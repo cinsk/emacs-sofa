@@ -25,7 +25,7 @@
 ;;; Code:
 
 
-(require 'curl)
+(require 'sofa-http)
 (require 'json)
 
 ;; TODO: the core API should be placed into this file.
@@ -124,7 +124,7 @@
   "Get the list of the all databases."
   (let ((url (concat (sofa-endpoint) "_all_dbs"))
         result)
-    (setq result (curl/http-recv 'get url))
+    (setq result (sofa--http-recv 'get url))
     (let ((json-key-type 'string))
       (append (json-read-from-string (cdr result)) nil))))
 
@@ -132,10 +132,8 @@
   "Create database, DATABASE.
 
 On error, raise `error' with the reason, otherwise return t."
-  (let ((url (concat (sofa-endpoint) (url-hexify-string database)))
-        result)
-    (curl/with-temp-buffer
-      (setq result (curl/http-send-buffer 'put url nil nil)))
+  (let* ((url (concat (sofa-endpoint) (url-hexify-string database)))
+         (result (sofa--http-send 'put url nil nil)))
     (let ((json-key-type 'string)
           parsed)
       ;; TODO: check the HTTP status first.
@@ -150,16 +148,16 @@ On error, raise `error' with the reason, otherwise return t."
 (defun sofa-database-exist-p (database)
   "Test if DATABASE existed."
   (let* ((url (concat (sofa-endpoint) (url-hexify-string database)))
-         (headers (car (curl/http-recv 'HEAD url)))
-         (status (string-to-number (assoc-value "Status" headers "404"))))
+         (headers (car (sofa--http-recv 'HEAD url)))
+         (status (assoc-value "Status" headers 404)))
     (and (>= status 200) (< status 300))))
 
 (defun sofa-get-database-info (database)
   "Get the information about DATABASE."
   (let* ((url (concat (sofa-endpoint) (url-hexify-string database)))
-         (result (curl/http-recv 'GET url))
+         (result (sofa--http-recv 'GET url))
          (headers (car result))
-         (status (string-to-number (assoc-value "Status" headers "404")))
+         (status (assoc-value "Status" headers 404))
          (body (cdr result)))
     (if (eq status 200)
         (json-read-from-string body))))
@@ -174,7 +172,7 @@ HTTP response code, and BODY is the string of the response body.
 
 If BUFFER is non-nil, this function will save the response body
 into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
-  (let ((result (curl/http-recv 'get url buffer)))
+  (let ((result (sofa--http-recv 'get url buffer)))
     ;; TODO: check http status first
     (if buffer
         (when sofa-json-prettifier
@@ -269,12 +267,12 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
             (setcdr (assoc "_rev" doc) rev-id)
           (setq doc (cons (cons "_rev" rev-id) doc )))))
 
-    (curl/with-temp-buffer
+    (with-temp-buffer
       (if (bufferp doc)
           (insert-buffer doc)
         (insert (json-encode-alist doc)))
       (setq result
-            (curl/http-send-buffer 'put url (current-buffer)
+            (sofa--http-send 'put url (current-buffer)
                                    "application/json")))
     (let ((json-key-type 'string)
           parsed)
@@ -292,11 +290,8 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
   (let ((url (concat (sofa-view-endpoint database design) "/_info")))
     (sofa-get url buffer)))
 
-;; (curl/http-start-recv 'get
-;;           "http://username:password@localhost:5984/fs/_design/fs/_view/path"
-;;           nil
-;;           (lambda (proc event)
-;;             (curl/http-body (point-min) (point-max) nil 'utf-8-dos)))
+;; (sofa--http-recv 'get
+;;  "http://username:password@localhost:5984/fs/_design/fs/_view/path")
 
 (defun sofa-get-view (database design view &optional buffer &rest params)
   (let ((url (apply 'sofa-view-endpoint
@@ -324,9 +319,9 @@ If RAW is non-nil, this function will not prettify the document contents."
                                  :include-docs
                                  (if nocontent nil t)))
         result)
-    (curl/with-temp-buffer
+    (with-temp-buffer
       (insert in)
-      (setq result (curl/http-send-buffer 'POST url (current-buffer))))
+      (setq result (sofa--http-send-buffer 'POST url (current-buffer))))
 
     ;; TODO: check http status first
 
@@ -349,7 +344,7 @@ If RAW is non-nil, this function will not prettify the document contents."
   (let ((url (concat (sofa-endpoint database) "/"
                      (url-hexify-string doc-id)))
         result)
-    (setq result (curl/http-recv 'get url buffer))
+    (setq result (sofa--http-recv 'get url buffer))
     ;; TODO: check http status first
 
     (if buffer
@@ -382,10 +377,10 @@ If RAW is non-nil, this function will not prettify the document contents."
           (setcdr (assoc "_rev" doc) rev-id)
         (setq doc (cons (cons "_rev" rev-id) doc ))))
 
-    (curl/with-temp-buffer
+    (with-temp-buffer
       (insert (json-encode-alist doc))
       (setq result
-            (curl/http-send-buffer 'put url (current-buffer)
+            (sofa--http-send-buffer 'put url (current-buffer)
                                    "application/json")))
     (let ((json-key-type 'string)
           parsed)
@@ -402,7 +397,7 @@ If RAW is non-nil, this function will not prettify the document contents."
   "Get the latest document revision of DOC-ID from DATABASE."
   (let ((url (concat (sofa-endpoint database) "/"
                      (url-hexify-string doc-id))))
-    (setq result (car (curl/http-recv 'head url))
+    (setq result (car (sofa--http-recv 'head url))
           rev-id (or (assoc-value "Etag" result)
 		     (assoc-value "ETag" result)
 		     (assoc-value "etag" result)))
@@ -422,7 +417,7 @@ This function returns the revision id of the delete operation."
                      (url-hexify-string doc-id) "?rev="
                      rev-id))
         result)
-    (setq result (curl/http-recv 'delete url))
+    (setq result (sofa--http-recv 'delete url))
     ;; On success:
     ;;   {"ok":true,"id":"worldy","rev":"5-f1b2366c24f5d088ccd2a7e998f6c3a9"}
     ;;

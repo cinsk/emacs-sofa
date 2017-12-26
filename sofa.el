@@ -20,13 +20,12 @@
 
 ;;; Commentary:
 
-;; 
+;;
 
 ;;; Code:
 
 
 (require 'sofa-api)
-(require 'curl)
 (require 'json)
 
 (defvar sofa-json-prettifier "python -mjson.tool")
@@ -51,7 +50,7 @@
 
 (defun sofa--documents-keywords ()
   (list (cons "^...#.*$" 'font-lock-comment-face)
-        (list "^...[[:space:]]*\\(\\<[^[:space:]]*\\>\\)[[:space:]]+\\(.*\\)$" 
+        (list "^...[[:space:]]*\\(\\<[^[:space:]]*\\>\\)[[:space:]]+\\(.*\\)$"
               '(1 'sofa-revision-face)
               '(2 'sofa-id-face))))
 
@@ -145,8 +144,8 @@ document."
        (move-marker ,oldpos nil)
        (move-marker ,pos nil)
        (nreverse ,result))))
-    
-        
+
+
 
 (defun sofa-repeat-over-lines (arg function)
   "Works similar to `dired-repeat-over-lines'."
@@ -241,7 +240,7 @@ document."
     (and buffer
          (pop-to-buffer buffer))))
 
-  
+
 (defun sofa--load-document (database key)
   "Load the document where the id is KEY from DATABASE, return the buffer."
   ;; TODO: I need to decide the mechanism of loading individual
@@ -255,7 +254,7 @@ document."
       (with-current-buffer buffer
         (if (not sofa-source-url)
             ;; this buffer has nothing to do with CouchDB.
-            (progn 
+            (progn
               (pop-to-buffer buffer)
               (error "The buffer \"%s\" is already used for other purpose!"))
           (let ((inhibit-read-only t))
@@ -277,7 +276,7 @@ document."
 This function loads document(s) according to the `sofa-limit'
 and `sofa-skip'"
   (let ((url (sofa-view-endpoint sofa-database-name
-                                    sofa-design-name 
+                                    sofa-design-name
                                     sofa-view-name
                                     :limit limit :skip skip))
         (count 0)
@@ -302,8 +301,8 @@ and `sofa-skip'"
             (newline))
           (setq count (1+ count)))))
     count))
-      
-    
+
+
 (defun sofa-load-view (&optional database design view limit skip)
   "Launch view mode like Futon"
   (interactive)
@@ -315,7 +314,7 @@ and `sofa-skip'"
        (setq skip 0))
   (let ((dbinfo (sofa-get-database-info database))
         docs)
-    (let* ((url (sofa-view-endpoint database design view 
+    (let* ((url (sofa-view-endpoint database design view
                                        :limit limit :skip skip))
            (result (sofa-get url))
            (bufname (concat "sofa:" database))
@@ -342,11 +341,11 @@ and `sofa-skip'"
         (sofa--view-fill-page skip limit)
         (setq sofa-skip skip
               sofa-limit limit)
-        
+
         (switch-to-buffer (current-buffer)))
     ;; TODO: dired-like mode?
       )))
-      
+
 
 
 (defun sofa-load-database (&optional database limit)
@@ -377,7 +376,7 @@ and `sofa-skip'"
         (switch-to-buffer (current-buffer))))
     ;; TODO: dired-like mode?
     ))
-      
+
 
 
 (defun sofa--prettify-buffer (&optional buffer)
@@ -390,7 +389,7 @@ function will revert to the original text."
   ;; TODO: refine this.
   (with-current-buffer (or buffer (current-buffer))
     (copy-region-as-kill (point-min) (point-max))
-    (unless (eq (shell-command-on-region 
+    (unless (eq (shell-command-on-region
                  (point-min) (point-max)
                  sofa-json-prettifier nil 'replace
                  shell-command-default-error-buffer t) 0)
@@ -487,7 +486,7 @@ If found an error, pop-up the error buffer for the inspection, and returns nil.
 If no error, returns t."
   (with-current-buffer (or buffer (current-buffer))
     (save-restriction
-      (sofa-save-buffer-modified 
+      (sofa-save-buffer-modified
         (widen)
         (save-buffer 0)
 
@@ -520,17 +519,17 @@ If no error, returns t."
               (compilation-minor-mode)
               (pop-to-buffer errbuf))
             nil))))))
-  
+
 (defun sofa-commit-design ()
   (let ((database sofa-database-name)
         (design sofa-design-name))
-        
+
     (sofa-put-design database design (current-buffer))
     (set-buffer-modified-p nil)
 
     ;; reload the design doc.
     (sofa-reload-design)))
-  
+
 
 (defun sofa--remove-succeeded-docs (buffer response)
   "Remove the successfully processed documents in the current bulk operation.
@@ -558,7 +557,7 @@ commiting documents modification in bulk mode.
     (with-current-buffer buffer
       (save-excursion
         (let* ((json-body (json-read-from-string
-                           (buffer-substring-no-properties 
+                           (buffer-substring-no-properties
                             (point-min) (point-max))))
                (json-docs (assoc-value 'docs json-body []))
                errored-docs)
@@ -583,8 +582,8 @@ commiting documents modification in bulk mode.
               (mapc (lambda (err)
                       (setq msg (concat msg
                                         (format "%s: %s: %s\n"
-                                                (nth 0 err) 
-                                                (nth 1 err) 
+                                                (nth 0 err)
+                                                (nth 1 err)
                                                 (nth 2 err)))))
                     reasons)
               (message (substring msg 0 -1))) ; remove trailing newline
@@ -594,47 +593,40 @@ commiting documents modification in bulk mode.
   ;; TODO: validation of buffer?
   (if (not (buffer-modified-p (current-buffer)))
       (message "Nothing to commit")
-    (let ((url (concat (sofa-endpoint sofa-database-name)
-                       "/_bulk_docs"))
-          (buffer (current-buffer))
-          result)
-      (curl/with-temp-buffer
-        (insert-buffer buffer)
-        (setq result (curl/http-send-buffer 'POST url (current-buffer)
-                                            "application/json"))
-        (let* ((headers (car result))
-               (body (cdr result))
-               (status (string-to-number (assoc-value "Status" headers "0"))))
-          (setq sofa-body body
-                sofa-status status)
-          ;; if on error, show the error and exit.  if on success,
-          ;; update the parent buffer, and exit if on partial success,
-          ;; update hte parent buffer, and remove the succeeded
-          ;; content from the buffer?
-          (cond ((eq status 201)
-                 ;; The doc is updated.
-                 ;; TODO: STATUS will be still 201 if there's only conflict!!
-                 (when (sofa--remove-succeeded-docs buffer body)
-                   ;; everything is okay, so removing the edit buffer.
-                   (sofa--hide-window-kill-buffer buffer)
-                   ;; TODO: remove the marks!!
-                   ))
-                 
-                (t
-                 ;; If STATUS is 400, it means "bad request" (malformed JSON).
+    (let* ((url (concat (sofa-endpoint sofa-database-name) "/_bulk_docs"))
+           (result (sofa--http-send 'POST url (current-buffer) "application/json"))
+	   (headers (car result))
+	   (body (cdr result))
+	   (status (assoc-value "Status" headers 0)))
+      (setq sofa-body body
+            sofa-status status)
+      ;; if on error, show the error and exit.  if on success,
+      ;; update the parent buffer, and exit if on partial success,
+      ;; update hte parent buffer, and remove the succeeded
+      ;; content from the buffer?
+      (cond ((eq status 201)
+             ;; The doc is updated.
+             ;; TODO: STATUS will be still 201 if there's only conflict!!
+             (when (sofa--remove-succeeded-docs (current-buffer) body)
+               ;; everything is okay, so removing the edit buffer.
+               (sofa--hide-window-kill-buffer (current-buffer))
+               ;; TODO: remove the marks!!
+               ))
 
-                 ;; something goes wrong; the BODY may contains
-                 ;; additional information about the error.
+            (t
+             ;; If STATUS is 400, it means "bad request" (malformed JSON).
 
-                 ;; TODO: shorten 'reason or make it readable.
-                 (let ((errinfo (json-read-from-string body)))
-                   (message "sofa: %s: %s"
-                            (assoc-value 'error errinfo "Unknown")
-                            (assoc-value 'reason errinfo "Unknown")))
-                 ))
-        )))))
+             ;; something goes wrong; the BODY may contains
+             ;; additional information about the error.
 
-  
+             ;; TODO: shorten 'reason or make it readable.
+             (let ((errinfo (json-read-from-string body)))
+               (message "sofa: %s: %s"
+                        (assoc-value 'error errinfo "Unknown")
+                        (assoc-value 'reason errinfo "Unknown")))
+             )))))
+
+
 (defun sofa-commit-buffer ()
   "Commit the change into the remote"
   (interactive)
@@ -644,7 +636,7 @@ commiting documents modification in bulk mode.
         (funcall sofa-commit-function)
       (message "Don't know how to commit"))))
 
-(defun sofa--view-mode-map () 
+(defun sofa--view-mode-map ()
   "create new sofa view mode map"
   (let ((map (make-sparse-keymap)))
     (define-key map [?n] #'sofa-view-forward-line)
@@ -662,7 +654,7 @@ commiting documents modification in bulk mode.
 (defvar sofa-view-mode-map (sofa--view-mode-map)
   "Keymap for sofa view mode")
 
-(defun sofa--edit-mode-map () 
+(defun sofa--edit-mode-map ()
   "create new sofa editing mode map"
   (let ((map (make-sparse-keymap)))
     (define-key map [(control ?x) ?k] #'sofa-edit-kill-buffer)
@@ -676,7 +668,7 @@ commiting documents modification in bulk mode.
   "Keymap for sofa mode")
 
 
-(defun sofa--json-mode-map () 
+(defun sofa--json-mode-map ()
   "create new sofa mode map"
   (let ((map (make-sparse-keymap)))
     (define-key map [(control ?x) ?k] #'sofa-kill-buffer)
@@ -768,7 +760,7 @@ commiting documents modification in bulk mode.
         ;;(message "buffer name: %S" (buffer-name))
         (save-buffer 0)
         ;;(message "buffer name: %S" (buffer-name))
-        
+
         (setq sofa-database-name database
               sofa-design-name design
               sofa-commit-function 'sofa-commit-design))
@@ -806,14 +798,10 @@ commiting documents modification in bulk mode.
       (if (buffer-modified-p buffer)
           (error "not implemented yet.")))
 
-    (curl/with-temp-buffer
-      (insert body)
-      (setq result (curl/http-send-buffer 'POST
-                                          url
-                                          (current-buffer)
-                                          "application/json")))
-    (setq status (assoc-value "Status" (car result) "404"))
-    (if (not (string-equal status "200"))
+    (setq result
+	  (sofa--http-send 'POST url body "application/json"))
+    (setq status (assoc-value "Status" (car result) 404))
+    (if (not (eq status 200))
         (progn (message "Remote returns HTTP %s code" status)
                nil)
 
@@ -831,9 +819,9 @@ commiting documents modification in bulk mode.
             (sofa/doarray (elem rows)
               (let ((doc (assoc-value 'doc elem nil)))
                 (setq res (cons doc res))))
-            (insert (json-encode-alist (list (cons 'docs 
+            (insert (json-encode-alist (list (cons 'docs
                                                    (vconcat (nreverse res)))))))
-          
+
           (sofa--prettify-buffer buffer)
 
           (with-current-buffer buffer
@@ -903,14 +891,12 @@ commiting documents modification in bulk mode.
     (if (buffer-modified-p buffer)
         (error "not implemented yet."))
 
-    (curl/with-temp-buffer
-      (insert body)
-      (setq result (curl/http-send-buffer 'POST
-                                          url
-                                          (current-buffer)
-                                          "application/json")))
-    (setq status (assoc-value "Status" (car result) "404"))
-    (if (not (string-equal status "200"))
+    (setq result (sofa--http-send 'POST
+                                  url
+                                  body
+                                  "application/json"))
+    (setq status (assoc-value "Status" (car result) 404))
+    (if (not (eq status 200))
         (progn (message "Remote returns HTTP %s code" status)
                nil)
       (with-current-buffer buffer
@@ -927,9 +913,9 @@ commiting documents modification in bulk mode.
           ;; TODO: set related local variables!!!
 
           ;; (setq sofa-database-name database ...)
-                
+
           ))
-      
+
       buffer)))
 
 
@@ -1007,7 +993,7 @@ CLASS and VALUE are nil iff the end of buffer reached."
      ;; 2    word              7    string quote      12    comment-end
      ;; 3    symbol            8    paired delimiter  13    inherit
      ;; 4    open parenthesis  9    escape            14    generic comment
-     ;; 15   generic string                           
+     ;; 15   generic string
   (interactive)
   (let ((ppss (syntax-ppss (point)))
         begin end)
@@ -1057,7 +1043,7 @@ CLASS and VALUE are nil iff the end of buffer reached."
                (cons 5 value))
               ((= cls 7)
                (skip-syntax-forward "\"")
-               (json-forward-syntax))               
+               (json-forward-syntax))
               (t
                (error (format "class %S not implemented yet" cls))))))))
 
@@ -1087,7 +1073,7 @@ CLASS and VALUE are nil iff the end of buffer reached."
             (while (setq key (json-move-to-parent-key))
               (setq keylist (cons (cdr key) keylist)))))
       keylist)))
-      
+
 
 (defun json-move-to-parent-key ()
   (let* ((oldpos (point))
@@ -1105,7 +1091,7 @@ CLASS and VALUE are nil iff the end of buffer reached."
                   ((< (nth 0 (syntax-ppss (point))) level)
                    (setq cont nil))))
           keypair))))
-                      
+
 
 (defun json-move-to-current-key ()
   "Move the point to the cloest JSON key in backward.
@@ -1118,7 +1104,7 @@ If there is no key component in backward, this function returns nil."
              (eq (char-after (point)) ?\"))
         (goto-char (1+ (point))))
     (json-backward-key)))
-    
+
 (defun json-backward-key ()
   "Move to the previous JSON key component."
   ;; TODO: json-move-to-current-key?
@@ -1137,7 +1123,7 @@ If there is no key component in backward, this function returns nil."
                      ;; SYN is the key!
                      (setq key syn)))))))
     key))
-                   
+
 
 (defun sofa-current-value-string-p ()
   "Return non-nil if the current value is a string type.
@@ -1221,7 +1207,7 @@ Note that the returned value does not contain the enclosing double-quote."
       (widen)
       ;;(while (search-forward "\n" nil t)
       ;; (replace-match "\\n" nil t))
-      
+
       (let ;; ((body (buffer-string)))
           ((body (json-read-string-from-buffer))
            (begin (car sofa-parent-region))
@@ -1254,7 +1240,7 @@ otherwise DOC should be JSON alist."
                      doc)
                     (t (error "invalid argument type")))))
     (assoc-value 'language json "javascript")))
-      
+
 (defun sofa--set-major-mode (keys src-buffer dst-buffer)
   "Set the major mode of DST-BUFFER according to KEYS from SRC-BUFFER"
   ;; TODO: it is not a good idea to parse the whole buffer in this time.
@@ -1269,7 +1255,7 @@ otherwise DOC should be JSON alist."
                         (string-equal (nth 0 keys) "shows")))
                (with-current-buffer dst-buffer
                  (javascript-mode)))
-              (t 
+              (t
                (with-current-buffer dst-buffer
                  (text-mode)))))
     ;; TODO: what major mode?
@@ -1278,7 +1264,7 @@ otherwise DOC should be JSON alist."
 
 (defun sofa--clear-editing-status (&optional force)
   "Clear the editing status on the current buffer."
-  (if (and sofa-edit-buffer 
+  (if (and sofa-edit-buffer
            (buffer-live-p sofa-edit-buffer)
            force)
       (kill-buffer sofa-edit-buffer))
@@ -1288,7 +1274,7 @@ otherwise DOC should be JSON alist."
     (remove-overlays (point-min) (point-max) 'type 'sofa))
   (setq buffer-read-only nil))
 
-      
+
 (defun sofa-design-edit-value ()
   "Edit current JSON value in other buffer."
   (interactive)
@@ -1300,7 +1286,7 @@ otherwise DOC should be JSON alist."
              (message "You need to commit or to cancel the on-going editing"))
     (sofa--clear-editing-status)
     (sofa--prepare-editing-value)))
-    
+
 
 (defun sofa--prepare-editing-value ()
   (let ((reg (sofa-string-value-region))
@@ -1308,7 +1294,7 @@ otherwise DOC should be JSON alist."
         overlay)
     (when reg
       ;; (remove-overlays (point-min) (point-max) 'type 'sofa)
-      (message "set invert face around (%d %d)" 
+      (message "set invert face around (%d %d)"
                (marker-position (car reg))
                (marker-position (cdr reg)))
       (setq overlay (make-overlay (car reg) (cdr reg)))
@@ -1317,7 +1303,7 @@ otherwise DOC should be JSON alist."
 
       (setq buffer-read-only t)
 
-      
+
       (let ((buffer (get-buffer-create sofa-json-edit-buffer))
             (oldbuf (current-buffer))
             (body (concat "\""
@@ -1361,12 +1347,12 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
               (setq start (point))
               (end-of-defun)
               (setq end (point))
-              
+
               (if (or (< end oldend) (and (= end oldend) (= end (point-max))))
                   (progn
                     (message "oldend: %d, region: %d-%d" oldend start end)
                     (goto-char start)
-                    (when (looking-at 
+                    (when (looking-at
                            "[[:space:]]*\\([a-zA-Z0-9_]*\\)[[:space:]]*=[[:space:]]*")
                       (push (cons (match-string-no-properties 1)
                                   (buffer-substring-no-properties
@@ -1386,7 +1372,7 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
           (goto-char (point-min))
           (condition-case err
               (when (re-search-forward
-                     (format "^[[:space:]]*%s[[:space:]]*=[[:space:]]*" 
+                     (format "^[[:space:]]*%s[[:space:]]*=[[:space:]]*"
                              function-name)
                      nil t)
                 ;;(beginning-of-line)
@@ -1414,7 +1400,7 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
                      (format "%s [%s] " prompt default)
                    prompt))
     (while (string-equal choice "")
-      (setq choice (completing-read prompt name-list 
+      (setq choice (completing-read prompt name-list
                                     (lambda (name)
                                       (member name name-list))
                                     'valid-only nil
@@ -1432,7 +1418,7 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
                      (format "%s [%s] " prompt default)
                    prompt))
     (while (string-equal choice "")
-      (setq choice (completing-read prompt name-list 
+      (setq choice (completing-read prompt name-list
                                     (lambda (name)
                                       (member name name-list))
                                     'valid-only nil
@@ -1441,11 +1427,11 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
     choice))
 
 
-  
+
 (defun sofa-view-delete-documents ()
   (interactive)
-  (let ((docs (sofa--map-over-marks 
-               (lambda () 
+  (let ((docs (sofa--map-over-marks
+               (lambda ()
                  (let ((pos (+ 3 (point))))
                    (cons (get-text-property pos 'sofa-key)
                          (get-text-property pos 'sofa-rev))))))
@@ -1453,8 +1439,9 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
                      "/_bulk_docs"))
         result)
     (when (> (length docs) 0)
-      (curl/with-temp-buffer
-        (insert "{ \"docs\": [\n")
+
+      (with-temp-buffer
+	(insert "{ \"docs\": [\n")
         (dolist (d docs)
           (insert (format
                    "{\"_id\":\"%s\",\"_rev\":\"%s\",\"_deleted\":true},\n"
@@ -1463,11 +1450,11 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
         (insert "\n]}")
 
         ;; Now, current buffer is filled with JSON data for bulk deletion.
-        (setq result (curl/http-send-buffer 'POST url (current-buffer)
-                                            "application/json"))
+        (setq result (sofa--http-send 'POST url (current-buffer)
+				      "application/json"))
 
         ;; TODO: DEAL RESULT HERE!!!!!!!!!!!!!!!
-        ;; 
+        ;;
         ;; If successful, "201" returned with the body, "[ { id: rev }, ... ]"
 
         ;; If partially successful (even all conflicted), "201" with the body,
@@ -1483,7 +1470,7 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
         ))))
 
 
-            
+
 (defun sofa-view-refresh-marked-revision ()
   "Refresh the marked entries for the updated status.
 
@@ -1491,7 +1478,7 @@ If the marked document is deleted, delete the entry from the buffer,
 If the marked document has different revision, refresh the buffer and property.
 
 Except updating for deletion, mark should stay the same."
-  (let ((in (json-encode-alist (list (cons 'keys 
+  (let ((in (json-encode-alist (list (cons 'keys
                                            (vconcat (sofa--marked-keys))))))
         (url (sofa-view-endpoint sofa-database-name)))
     (error "not implemented yet")))
@@ -1533,10 +1520,10 @@ Note that it ignores back-up files (e.g. \"filename~\") and tempory files (e.g. 
                         (unless (car attr) ; non-directory
                           (push (cons "uid" (nth 2 attr)) json)
                           (push (cons "gid" (nth 3 attr)) json)
-                          (push (cons "atime" (format-time-string "%s" 
+                          (push (cons "atime" (format-time-string "%s"
                                                                   (nth 4 attr)))
                                       json)
-                          (push (cons "ctime" (format-time-string "%s" 
+                          (push (cons "ctime" (format-time-string "%s"
                                                                   (nth 5 attr)))
                                       json)
                           (push (cons "size" (nth 7 attr)) json)
@@ -1546,8 +1533,8 @@ Note that it ignores back-up files (e.g. \"filename~\") and tempory files (e.g. 
                                 json)
                           (princ (format "%S\n" json)))))
                     (not recursive)))
-                             
-                     
+
+
 
 (provide 'sofa)
 ;;; sofa.el ends here
