@@ -604,7 +604,7 @@ commiting documents modification in bulk mode.
                                             "application/json"))
         (let* ((headers (car result))
                (body (cdr result))
-               (status (string-to-int (assoc-value "Status" headers "0"))))
+               (status (string-to-number (assoc-value "Status" headers "0"))))
           (setq sofa-body body
                 sofa-status status)
           ;; if on error, show the error and exit.  if on success,

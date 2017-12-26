@@ -151,7 +151,7 @@ On error, raise `error' with the reason, otherwise return t."
   "Test if DATABASE existed."
   (let* ((url (concat (sofa-endpoint) (url-hexify-string database)))
          (headers (car (curl/http-recv 'HEAD url)))
-         (status (string-to-int (assoc-value "Status" headers "404"))))
+         (status (string-to-number (assoc-value "Status" headers "404"))))
     (and (>= status 200) (< status 300))))
 
 (defun sofa-get-database-info (database)
@@ -159,7 +159,7 @@ On error, raise `error' with the reason, otherwise return t."
   (let* ((url (concat (sofa-endpoint) (url-hexify-string database)))
          (result (curl/http-recv 'GET url))
          (headers (car result))
-         (status (string-to-int (assoc-value "Status" headers "404")))
+         (status (string-to-number (assoc-value "Status" headers "404")))
          (body (cdr result)))
     (if (eq status 200)
         (json-read-from-string body))))
