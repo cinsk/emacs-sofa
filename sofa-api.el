@@ -141,9 +141,10 @@ On error, raise `error' with the reason, otherwise return t."
       ;; TODO: check the HTTP status first.
       (setq parsed (json-read-from-string (cdr result)))
       (let ((ok (assoc "ok" parsed))
-            (err (assoc "error" parsed)))
+            (err (assoc-value "error" parsed))
+	    (reason (assoc-value "reason" parsed)))
         (unless ok
-          (error (cdr err)))
+          (error "%s: %s" err reason))
         (cdr ok)))))
 
 (defun sofa-database-exist-p (database)
@@ -280,9 +281,10 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
       ;; TODO: check the HTTP status first.
       (setq parsed (json-read-from-string (cdr result)))
       (let ((ok (assoc "ok" parsed))
-            (err (assoc "error" parsed)))
+            (err (assoc-value "error" parsed))
+	    (reason (assoc-value "reason" parsed)))
         (unless ok
-          (error (cdr err)))
+          (error "%s: %s" err reason))
         (cdr (assoc "rev" parsed))))))
 
 
@@ -390,9 +392,10 @@ If RAW is non-nil, this function will not prettify the document contents."
       ;; TODO: check the HTTP status first.
       (setq parsed (json-read-from-string (cdr result)))
       (let ((ok (assoc "ok" parsed))
-            (err (assoc "error" parsed)))
+            (err (assoc-value "error" parsed))
+	    (reason (assoc-value "reason" parsed)))
         (unless ok
-          (error (cdr err)))
+          (error "%s: %s" err reason))
         (cdr (assoc "rev" parsed))))))
 
 (defun sofa-document-revision (database doc-id)
@@ -429,9 +432,10 @@ This function returns the revision id of the delete operation."
     (let ((json-key-type 'string) parsed)
       (setq parsed (json-read-from-string (cdr result)))
       (let ((ok (assoc "ok" parsed))
-            (err (assoc "error" parsed)))
+            (err (assoc-value "error" parsed))
+	    (reason (assoc-value "reason" parsed)))
         (unless ok
-          (error (cdr err)))
+          (error "%s: %s" err reason))
         (cdr (assoc "rev" parsed))))))
 
 
