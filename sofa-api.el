@@ -27,6 +27,7 @@
 
 (require 'sofa-http)
 (require 'json)
+(require 'cl)
 
 ;; TODO: the core API should be placed into this file.
 
@@ -188,46 +189,48 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
       (let ((json-key-type 'string))
         (json-read-from-string (cdr result))))))
 
-
 (defun parse-query-params (params)
-  (flet ((keyword-name (key)
-                       (replace-regexp-in-string "-" "_"
-                                                 (substring
-                                                  (symbol-name key) 1) t t))
-         (param-eval (value &optional json)
-                     (cond ((stringp value)
-                            (if json (json-encode-string value) value))
-                           ((listp value)
-                            (json-encode-alist value))
-                           ((arrayp value)
-                            (json-encode-array value))
-                           ((null value) "false")
-                           ((eq t value) "true")
-                           ((numberp value)
-                            (format "%S" value))))
+  (cl-letf (((symbol-function 'keyword-name)
+	     (lambda (key)
+	       (replace-regexp-in-string "-" "_"
+					 (substring
+					  (symbol-name key) 1) t t)))
+            ((symbol-function 'param-eval)
+	     (lambda (value &optional json)
+	       (cond ((stringp value)
+		      (if json (json-encode-string value) value))
+		     ((listp value)
+		      (json-encode-alist value))
+		     ((arrayp value)
+		      (json-encode-array value))
+		     ((null value) "false")
+		     ((eq t value) "true")
+		     ((numberp value)
+		      (format "%S" value)))))
 
-         (parse (key value params result)
-                ;; (format "&%s=%s"
-                ;;         (url-hexify-string
-                ;;          (keyword-name key))
-                ;;         (cond ((or (eq key :key)
-                ;;                    (eq key :keys)
-                ;;                    (eq key :startkey)
-                ;;                    (eq key :endkey))
-                ;;                (url-hexify-string (param-eval value 'json)))
-                ;;               (t
-                ;;                (url-hexify-string (param-eval value)))))
-                (if key
-                    (let ((pair (format "&%s=%s"
-                                        (url-hexify-string
-                                         (keyword-name key))
-                                        (url-hexify-string
-                                         (param-eval value)))))
-                      (parse (car params)
-                             (cadr params)
-                             (cddr params)
-                             (concat result pair)))
-                  (concat "?" (substring result 1)))))
+            ((symbol-function 'parse)
+	     (lambda (key value params result)
+               ;; (format "&%s=%s"
+               ;;         (url-hexify-string
+               ;;          (keyword-name key))
+               ;;         (cond ((or (eq key :key)
+               ;;                    (eq key :keys)
+               ;;                    (eq key :startkey)
+               ;;                    (eq key :endkey))
+               ;;                (url-hexify-string (param-eval value 'json)))
+               ;;               (t
+               ;;                (url-hexify-string (param-eval value)))))
+               (if key
+                   (let ((pair (format "&%s=%s"
+                                       (url-hexify-string
+					(keyword-name key))
+                                       (url-hexify-string
+					(param-eval value)))))
+		     (parse (car params)
+			    (cadr params)
+			    (cddr params)
+			    (concat result pair)))
+                 (concat "?" (substring result 1))))))
     (if params
         (parse (car params) (cadr params) (cddr params) "")
       "")))
