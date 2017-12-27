@@ -13,12 +13,3 @@ development, please let me know.
 For the usage and the installation, please see the wiki page:
 
   http://github.com/cinsk/emacs-sofa/wiki/
-
-
-Dependencies
-------------
-
-Currently, it does not use url package but depends on emacs-curl.
-
-* emacs-curl: https://github.com/cinsk/emacs-curl
-
