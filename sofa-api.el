@@ -321,7 +321,7 @@ If RAW is non-nil, this function will not prettify the document contents."
         result)
     (with-temp-buffer
       (insert in)
-      (setq result (sofa--http-send-buffer 'POST url (current-buffer))))
+      (setq result (sofa--http-send 'POST url (current-buffer))))
 
     ;; TODO: check http status first
 
@@ -380,8 +380,8 @@ If RAW is non-nil, this function will not prettify the document contents."
     (with-temp-buffer
       (insert (json-encode-alist doc))
       (setq result
-            (sofa--http-send-buffer 'put url (current-buffer)
-                                   "application/json")))
+            (sofa--http-send 'put url (current-buffer)
+                             "application/json")))
     (let ((json-key-type 'string)
           parsed)
       ;; TODO: check the HTTP status first.
