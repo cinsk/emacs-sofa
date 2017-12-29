@@ -639,15 +639,17 @@ commiting documents modification in bulk mode.
 (defun sofa--view-mode-map ()
   "create new sofa view mode map"
   (let ((map (make-sparse-keymap)))
-    (define-key map [?n] #'sofa-view-forward-line)
-    (define-key map [?p] #'sofa-view-previous-line)
-    (define-key map [?m] #'sofa-view-mark)
-    (define-key map [?u] #'sofa-view-unmark)
-    (define-key map [?q] #'sofa-view-quit)
-    (define-key map [?o] #'sofa-view-load-documents-other-window)
-    (define-key map [?g] #'sofa-view-revert-buffer)
-    (define-key map [(control ?x) ?\]] #'sofa-view-forward-page)
-    (define-key map [(control ?x) ?\[] #'sofa-view-backward-page)
+    (define-key map (kbd "n") #'sofa-view-forward-line)
+    (define-key map (kbd "p") #'sofa-view-previous-line)
+    (define-key map (kbd "m") #'sofa-view-mark)
+    (define-key map (kbd "u") #'sofa-view-unmark)
+    (define-key map (kbd "q") #'sofa-view-quit)
+    (define-key map (kbd "o") #'sofa-view-load-documents-other-window)
+    (define-key map (kbd "<return>") #'sofa-view-load-documents-other-window)
+    (define-key map (kbd "g") #'sofa-view-revert-buffer)
+    (define-key map (kbd "C-x l") #'sofa-set-limit)
+    (define-key map (kbd "C-x ]") #'sofa-view-forward-page)
+    (define-key map (kbd "C-x [") #'sofa-view-backward-page)
 
     map))
 
@@ -657,10 +659,10 @@ commiting documents modification in bulk mode.
 (defun sofa--edit-mode-map ()
   "create new sofa editing mode map"
   (let ((map (make-sparse-keymap)))
-    (define-key map [(control ?x) ?k] #'sofa-edit-kill-buffer)
-    (define-key map [(control ?c) (control ?k)] #'sofa-edit-kill-buffer)
-    (define-key map [(control ?c) (control ?c)] #'sofa-edit-commit-buffer)
-    (define-key map [(control ?c) ?c] #'sofa-validate-buffer)
+    (define-key map (kbd "C-x k") #'sofa-edit-kill-buffer)
+    (define-key map (kbd "C-c C-k") #'sofa-edit-kill-buffer)
+    (define-key map (kbd "C-c C-c") #'sofa-edit-commit-buffer)
+    (define-key map (kbd "C-c c") #'sofa-validate-buffer)
 
     map))
 
@@ -671,11 +673,11 @@ commiting documents modification in bulk mode.
 (defun sofa--json-mode-map ()
   "create new sofa mode map"
   (let ((map (make-sparse-keymap)))
-    (define-key map [(control ?x) ?k] #'sofa-kill-buffer)
-    (define-key map [(control ?c) (control ?k)] #'sofa-kill-buffer)
-    (define-key map [(control ?c) (control ?c)] #'sofa-commit-buffer)
-    (define-key map [(control ?c) (control ?e)] #'sofa-design-edit-value)
-    (define-key map [(control ?c) ?c] #'sofa-validate-buffer)
+    (define-key map (kbd "C-x k") #'sofa-kill-buffer)
+    (define-key map (kbd "C-c C-k") #'sofa-kill-buffer)
+    (define-key map (kbd "C-c C-c") #'sofa-commit-buffer)
+    (define-key map (kbd "C-c C-e") #'sofa-design-edit-value)
+    (define-key map (kbd "C-c c") #'sofa-validate-buffer)
 
     map))
 
@@ -1534,7 +1536,12 @@ Note that it ignores back-up files (e.g. \"filename~\") and tempory files (e.g. 
                           (princ (format "%S\n" json)))))
                     (not recursive)))
 
-
+(defun sofa-set-limit (limit)
+  "Sets `sofa-limit' and refreshes buffer"
+  (interactive (list
+		(read-number "NSofa document limit: " sofa-limit)))
+  (setq sofa-limit limit)
+  (sofa-view-revert-buffer))
 
 (provide 'sofa)
 ;;; sofa.el ends here

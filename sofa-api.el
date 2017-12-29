@@ -355,8 +355,8 @@ If RAW is non-nil, this function will not prettify the document contents."
           (with-current-buffer buffer
             (copy-region-as-kill (point-min) (point-max))
             (unless (eq (shell-command-on-region (point-min) (point-max)
-                                     sofa-json-prettifier nil 'replace
-                                     shell-command-default-error-buffer t) 0)
+						 sofa-json-prettifier nil 'replace
+						 shell-command-default-error-buffer t) 0)
               (erase-buffer)
               ;; TODO: need to refind below line for `undo' feature.
               (insert-for-yank (current-kill 0)))))

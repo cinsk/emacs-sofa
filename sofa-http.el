@@ -35,11 +35,3 @@ is non-nil will insert body into buffer and return (HEADER-ALIST
     (sofa--http-recv method url)))
 
 (provide 'sofa-http)
-
-(progn
- (sofa--http-send 'POST
-		  "https://sofa.kra.hn:443/notes-from-lively/_all_docs?include_docs=true"
-		  "{\"keys\":[\"[code] copy worlds locally\"]}"
-		  "application/json"
-		  )
- nil)
