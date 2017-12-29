@@ -1432,44 +1432,48 @@ function such as \"map\", \"reduce\", \"validate_doc_update\", etc.
 
 (defun sofa-view-delete-documents ()
   (interactive)
-  (let ((docs (sofa--map-over-marks
-               (lambda ()
-                 (let ((pos (+ 3 (point))))
-                   (cons (get-text-property pos 'sofa-key)
-                         (get-text-property pos 'sofa-rev))))))
-        (url (concat (sofa-endpoint sofa-database-name)
-                     "/_bulk_docs"))
-        result)
-    (when (> (length docs) 0)
+  (when (y-or-n-p "sofa-view-delete-documents is not fully implemented
+ yet, marked document will be deleted but conflicts and such ar
+ not detected. Continue?")
+   (let ((docs (sofa--map-over-marks
+		(lambda ()
+                  (let ((pos (+ 3 (point))))
+                    (cons (get-text-property pos 'sofa-key)
+                          (get-text-property pos 'sofa-rev))))))
+         (url (concat (sofa-endpoint sofa-database-name)
+                      "/_bulk_docs"))
+         result)
+     (if (= (length docs) 0)
+	 (message "nothing selected")
+       (if (y-or-n-p (format "Really delete %s documents?" (length docs)))
+	 (with-temp-buffer
+	   (insert "{ \"docs\": [\n")
+           (dolist (d docs)
+             (insert (format
+                      "{\"_id\":\"%s\",\"_rev\":\"%s\",\"_deleted\":true},\n"
+                      (car d) (cdr d))))
+           (delete-char -2)
+           (insert "\n]}")
 
-      (with-temp-buffer
-	(insert "{ \"docs\": [\n")
-        (dolist (d docs)
-          (insert (format
-                   "{\"_id\":\"%s\",\"_rev\":\"%s\",\"_deleted\":true},\n"
-                   (car d) (cdr d))))
-        (delete-char -2)
-        (insert "\n]}")
+           ;; Now, current buffer is filled with JSON data for bulk deletion.
+           (setq result (sofa--http-send 'POST url (current-buffer)
+					 "application/json"))
 
-        ;; Now, current buffer is filled with JSON data for bulk deletion.
-        (setq result (sofa--http-send 'POST url (current-buffer)
-				      "application/json"))
+           ;; TODO: DEAL RESULT HERE!!!!!!!!!!!!!!!
+           ;;
+           ;; If successful, "201" returned with the body, "[ { id: rev }, ... ]"
 
-        ;; TODO: DEAL RESULT HERE!!!!!!!!!!!!!!!
-        ;;
-        ;; If successful, "201" returned with the body, "[ { id: rev }, ... ]"
+           ;; If partially successful (even all conflicted), "201" with the body,
+           ;;
+           ;; [ { "id" : "xxx", "rev" : "yyy" },
+           ;;   { "id" : "www", "error" : "conflict", "reason" : "..." } ]
+           ;;
 
-        ;; If partially successful (even all conflicted), "201" with the body,
-        ;;
-        ;; [ { "id" : "xxx", "rev" : "yyy" },
-        ;;   { "id" : "www", "error" : "conflict", "reason" : "..." } ]
-        ;;
-
-        ;; TODO: remove the successfully deleted documents from the view,
-        ;;       For the failed document, refresh the revision, and
-        ;;       show message, "updated revisions, try again", and quit.
-        (error "not fully implemented yet.")
-        ))))
+           ;; TODO: remove the successfully deleted documents from the view,
+           ;;       For the failed document, refresh the revision, and
+           ;;       show message, "updated revisions, try again", and quit.
+           )
+	 (message "deletion canceled"))))))
 
 
 
