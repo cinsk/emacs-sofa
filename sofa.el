@@ -647,7 +647,7 @@ commiting documents modification in bulk mode.
     (define-key map (kbd "o") #'sofa-view-load-documents-other-window)
     (define-key map (kbd "<return>") #'sofa-view-load-documents-other-window)
     (define-key map (kbd "g") #'sofa-view-revert-buffer)
-    (define-key map (kbd "C-x l") #'sofa-set-limit)
+    (define-key map (kbd "l") #'sofa-set-limit)
     (define-key map (kbd "C-x ]") #'sofa-view-forward-page)
     (define-key map (kbd "C-x [") #'sofa-view-backward-page)
 
