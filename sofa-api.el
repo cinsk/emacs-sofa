@@ -25,8 +25,9 @@
 ;;; Code:
 
 
-(require 'curl)
+(require 'sofa-http)
 (require 'json)
+(require 'cl)
 
 ;; TODO: the core API should be placed into this file.
 
@@ -124,7 +125,7 @@
   "Get the list of the all databases."
   (let ((url (concat (sofa-endpoint) "_all_dbs"))
         result)
-    (setq result (curl/http-recv 'get url))
+    (setq result (sofa--http-recv 'get url))
     (let ((json-key-type 'string))
       (append (json-read-from-string (cdr result)) nil))))
 
@@ -132,33 +133,32 @@
   "Create database, DATABASE.
 
 On error, raise `error' with the reason, otherwise return t."
-  (let ((url (concat (sofa-endpoint) (url-hexify-string database)))
-        result)
-    (curl/with-temp-buffer
-      (setq result (curl/http-send-buffer 'put url nil nil)))
+  (let* ((url (concat (sofa-endpoint) (url-hexify-string database)))
+         (result (sofa--http-send 'put url nil nil)))
     (let ((json-key-type 'string)
           parsed)
       ;; TODO: check the HTTP status first.
       (setq parsed (json-read-from-string (cdr result)))
       (let ((ok (assoc "ok" parsed))
-            (err (assoc "error" parsed)))
+            (err (assoc-value "error" parsed))
+	    (reason (assoc-value "reason" parsed)))
         (unless ok
-          (error (cdr err)))
+          (error "%s: %s" err reason))
         (cdr ok)))))
 
 (defun sofa-database-exist-p (database)
   "Test if DATABASE existed."
   (let* ((url (concat (sofa-endpoint) (url-hexify-string database)))
-         (headers (car (curl/http-recv 'HEAD url)))
-         (status (string-to-int (assoc-value "Status" headers "404"))))
+         (headers (car (sofa--http-recv 'HEAD url)))
+         (status (assoc-value "Status" headers 404)))
     (and (>= status 200) (< status 300))))
 
 (defun sofa-get-database-info (database)
   "Get the information about DATABASE."
   (let* ((url (concat (sofa-endpoint) (url-hexify-string database)))
-         (result (curl/http-recv 'GET url))
+         (result (sofa--http-recv 'GET url))
          (headers (car result))
-         (status (string-to-int (assoc-value "Status" headers "404")))
+         (status (assoc-value "Status" headers 404))
          (body (cdr result)))
     (if (eq status 200)
         (json-read-from-string body))))
@@ -173,7 +173,7 @@ HTTP response code, and BODY is the string of the response body.
 
 If BUFFER is non-nil, this function will save the response body
 into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
-  (let ((result (curl/http-recv 'get url buffer)))
+  (let ((result (sofa--http-recv 'get url buffer)))
     ;; TODO: check http status first
     (if buffer
         (when sofa-json-prettifier
@@ -189,46 +189,48 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
       (let ((json-key-type 'string))
         (json-read-from-string (cdr result))))))
 
-
 (defun parse-query-params (params)
-  (flet ((keyword-name (key)
-                       (replace-regexp-in-string "-" "_"
-                                                 (substring
-                                                  (symbol-name key) 1) t t))
-         (param-eval (value &optional json)
-                     (cond ((stringp value)
-                            (if json (json-encode-string value) value))
-                           ((listp value)
-                            (json-encode-alist value))
-                           ((arrayp value)
-                            (json-encode-array value))
-                           ((null value) "false")
-                           ((eq t value) "true")
-                           ((numberp value)
-                            (format "%S" value))))
+  (cl-letf (((symbol-function 'keyword-name)
+	     (lambda (key)
+	       (replace-regexp-in-string "-" "_"
+					 (substring
+					  (symbol-name key) 1) t t)))
+            ((symbol-function 'param-eval)
+	     (lambda (value &optional json)
+	       (cond ((stringp value)
+		      (if json (json-encode-string value) value))
+		     ((listp value)
+		      (json-encode-alist value))
+		     ((arrayp value)
+		      (json-encode-array value))
+		     ((null value) "false")
+		     ((eq t value) "true")
+		     ((numberp value)
+		      (format "%S" value)))))
 
-         (parse (key value params result)
-                ;; (format "&%s=%s"
-                ;;         (url-hexify-string
-                ;;          (keyword-name key))
-                ;;         (cond ((or (eq key :key)
-                ;;                    (eq key :keys)
-                ;;                    (eq key :startkey)
-                ;;                    (eq key :endkey))
-                ;;                (url-hexify-string (param-eval value 'json)))
-                ;;               (t
-                ;;                (url-hexify-string (param-eval value)))))
-                (if key
-                    (let ((pair (format "&%s=%s"
-                                        (url-hexify-string
-                                         (keyword-name key))
-                                        (url-hexify-string
-                                         (param-eval value)))))
-                      (parse (car params)
-                             (cadr params)
-                             (cddr params)
-                             (concat result pair)))
-                  (concat "?" (substring result 1)))))
+            ((symbol-function 'parse)
+	     (lambda (key value params result)
+               ;; (format "&%s=%s"
+               ;;         (url-hexify-string
+               ;;          (keyword-name key))
+               ;;         (cond ((or (eq key :key)
+               ;;                    (eq key :keys)
+               ;;                    (eq key :startkey)
+               ;;                    (eq key :endkey))
+               ;;                (url-hexify-string (param-eval value 'json)))
+               ;;               (t
+               ;;                (url-hexify-string (param-eval value)))))
+               (if key
+                   (let ((pair (format "&%s=%s"
+                                       (url-hexify-string
+					(keyword-name key))
+                                       (url-hexify-string
+					(param-eval value)))))
+		     (parse (car params)
+			    (cadr params)
+			    (cddr params)
+			    (concat result pair)))
+                 (concat "?" (substring result 1))))))
     (if params
         (parse (car params) (cadr params) (cddr params) "")
       "")))
@@ -268,21 +270,22 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
             (setcdr (assoc "_rev" doc) rev-id)
           (setq doc (cons (cons "_rev" rev-id) doc )))))
 
-    (curl/with-temp-buffer
+    (with-temp-buffer
       (if (bufferp doc)
           (insert-buffer doc)
         (insert (json-encode-alist doc)))
       (setq result
-            (curl/http-send-buffer 'put url (current-buffer)
+            (sofa--http-send 'put url (current-buffer)
                                    "application/json")))
     (let ((json-key-type 'string)
           parsed)
       ;; TODO: check the HTTP status first.
       (setq parsed (json-read-from-string (cdr result)))
       (let ((ok (assoc "ok" parsed))
-            (err (assoc "error" parsed)))
+            (err (assoc-value "error" parsed))
+	    (reason (assoc-value "reason" parsed)))
         (unless ok
-          (error (cdr err)))
+          (error "%s: %s" err reason))
         (cdr (assoc "rev" parsed))))))
 
 
@@ -290,11 +293,8 @@ into BUFFER, and returns a form (RESPONSE-HEADERS . nil)."
   (let ((url (concat (sofa-view-endpoint database design) "/_info")))
     (sofa-get url buffer)))
 
-;; (curl/http-start-recv 'get
-;;           "http://username:password@localhost:5984/fs/_design/fs/_view/path"
-;;           nil
-;;           (lambda (proc event)
-;;             (curl/http-body (point-min) (point-max) nil 'utf-8-dos)))
+;; (sofa--http-recv 'get
+;;  "http://username:password@localhost:5984/fs/_design/fs/_view/path")
 
 (defun sofa-get-view (database design view &optional buffer &rest params)
   (let ((url (apply 'sofa-view-endpoint
@@ -322,9 +322,9 @@ If RAW is non-nil, this function will not prettify the document contents."
                                  :include-docs
                                  (if nocontent nil t)))
         result)
-    (curl/with-temp-buffer
+    (with-temp-buffer
       (insert in)
-      (setq result (curl/http-send-buffer 'POST url (current-buffer))))
+      (setq result (sofa--http-send 'POST url (current-buffer))))
 
     ;; TODO: check http status first
 
@@ -347,7 +347,7 @@ If RAW is non-nil, this function will not prettify the document contents."
   (let ((url (concat (sofa-endpoint database) "/"
                      (url-hexify-string doc-id)))
         result)
-    (setq result (curl/http-recv 'get url buffer))
+    (setq result (sofa--http-recv 'get url buffer))
     ;; TODO: check http status first
 
     (if buffer
@@ -355,8 +355,8 @@ If RAW is non-nil, this function will not prettify the document contents."
           (with-current-buffer buffer
             (copy-region-as-kill (point-min) (point-max))
             (unless (eq (shell-command-on-region (point-min) (point-max)
-                                     sofa-json-prettifier nil 'replace
-                                     shell-command-default-error-buffer t) 0)
+						 sofa-json-prettifier nil 'replace
+						 shell-command-default-error-buffer t) 0)
               (erase-buffer)
               ;; TODO: need to refind below line for `undo' feature.
               (insert-for-yank (current-kill 0)))))
@@ -380,29 +380,31 @@ If RAW is non-nil, this function will not prettify the document contents."
           (setcdr (assoc "_rev" doc) rev-id)
         (setq doc (cons (cons "_rev" rev-id) doc ))))
 
-    (curl/with-temp-buffer
+    (with-temp-buffer
       (insert (json-encode-alist doc))
       (setq result
-            (curl/http-send-buffer 'put url (current-buffer)
-                                   "application/json")))
+            (sofa--http-send 'put url (current-buffer)
+                             "application/json")))
     (let ((json-key-type 'string)
           parsed)
       ;; TODO: check the HTTP status first.
       (setq parsed (json-read-from-string (cdr result)))
       (let ((ok (assoc "ok" parsed))
-            (err (assoc "error" parsed)))
+            (err (assoc-value "error" parsed))
+	    (reason (assoc-value "reason" parsed)))
         (unless ok
-          (error (cdr err)))
+          (error "%s: %s" err reason))
         (cdr (assoc "rev" parsed))))))
 
 (defun sofa-document-revision (database doc-id)
   "Get the latest document revision of DOC-ID from DATABASE."
   (let ((url (concat (sofa-endpoint database) "/"
                      (url-hexify-string doc-id))))
-    (setq result (curl/http-recv 'head url)
-          rev-id (assoc-value "Etag" (car result)))
-    (and rev-id
-         (strip-etag rev-id))))
+    (setq result (car (sofa--http-recv 'head url))
+          rev-id (or (assoc-value "Etag" result)
+		     (assoc-value "ETag" result)
+		     (assoc-value "etag" result)))
+    (and rev-id (strip-etag rev-id))))
 
 
 (defun sofa-delete-document (database doc-id &optional rev-id)
@@ -418,7 +420,7 @@ This function returns the revision id of the delete operation."
                      (url-hexify-string doc-id) "?rev="
                      rev-id))
         result)
-    (setq result (curl/http-recv 'delete url))
+    (setq result (sofa--http-recv 'delete url))
     ;; On success:
     ;;   {"ok":true,"id":"worldy","rev":"5-f1b2366c24f5d088ccd2a7e998f6c3a9"}
     ;;
@@ -429,9 +431,10 @@ This function returns the revision id of the delete operation."
     (let ((json-key-type 'string) parsed)
       (setq parsed (json-read-from-string (cdr result)))
       (let ((ok (assoc "ok" parsed))
-            (err (assoc "error" parsed)))
+            (err (assoc-value "error" parsed))
+	    (reason (assoc-value "reason" parsed)))
         (unless ok
-          (error (cdr err)))
+          (error "%s: %s" err reason))
         (cdr (assoc "rev" parsed))))))
 
 
